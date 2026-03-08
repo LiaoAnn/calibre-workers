@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    user: node
+    volumes:
+      - ../..:/workspaces:cached
+      - pnpm_store:/home/node/.pnpm-store
+
+volumes:
+  pnpm_store:

@@ -1,0 +1,20 @@
+{
+  "name": "cf-worker-typescript-template",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "lint": "biome check src",
+    "format": "biome format --write src",
+    "check": "biome check --write src",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "hono": "^4.12.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@types/node": "^22.19.11",
+    "wrangler": "^4.68.0"
+  }
+}
