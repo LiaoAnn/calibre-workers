@@ -1,5 +1,5 @@
 {
-  "name": "cf-worker-typescript-template",
+  "name": "calibre-workers",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
