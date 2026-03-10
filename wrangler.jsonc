@@ -5,10 +5,26 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/index.ts",
   "dev": {
     "ip": "127.0.0.1",
     "port": 8787,
     "inspector_port": 9229
-  }
+  },
+  "vars": {
+    "BETTER_AUTH_URL": "http://localhost:8787"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "calibre-workers-db",
+      "database_id": "bbbca4b0-d857-4d86-8617-3320dd87bfab"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BOOKS_STORAGE",
+      "bucket_name": "calibre-books"
+    },
+  ]
 }
