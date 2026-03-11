@@ -42,14 +42,31 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 					? title.trim()
 					: extractedMetadata.title?.trim() ||
 						file.name.replace(/\.[^.]+$/, "");
-			const resolvedAuthor =
+
+			const resolvedAuthors =
 				typeof author === "string" && author.trim().length > 0
-					? author.trim()
-					: extractedMetadata.author?.trim() || "Unknown";
+					? [author.trim()]
+					: (extractedMetadata.authors?.filter((a) => a.trim().length > 0) ??
+						[]);
+
+			const resolvedPubdate = extractedMetadata.pubdate
+				? (() => {
+						const d = new Date(extractedMetadata.pubdate as string);
+						return Number.isNaN(d.getTime()) ? undefined : d;
+					})()
+				: undefined;
 
 			const created = yield* createBookFromUpload({
 				title: resolvedTitle,
-				author: resolvedAuthor,
+				authors: resolvedAuthors,
+				description: extractedMetadata.description,
+				publisher: extractedMetadata.publisher,
+				tags: extractedMetadata.tags,
+				language: extractedMetadata.language,
+				pubdate: resolvedPubdate,
+				series: extractedMetadata.series,
+				seriesIndex: extractedMetadata.seriesIndex,
+				identifiers: extractedMetadata.identifiers,
 				fileName: file.name,
 				mimeType: file.type || undefined,
 				size: file.size,

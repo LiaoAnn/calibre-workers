@@ -6,7 +6,16 @@ import { ParseError } from "#/lib/errors";
 
 export interface EpubMetadata {
 	title?: string;
-	author?: string;
+	/** Multiple authors; comma-joined for display. TODO: link to individual author profile pages */
+	authors?: string[];
+	description?: string;
+	publisher?: string;
+	tags?: string[];
+	language?: string;
+	pubdate?: string;
+	series?: string;
+	seriesIndex?: number;
+	identifiers?: { type: string; value: string }[];
 }
 
 export interface EpubCover {
@@ -61,6 +70,59 @@ function extractTagContent(xml: string, tag: string): string | undefined {
 	return normalized.length > 0 ? normalized : undefined;
 }
 
+function extractAllTagContents(xml: string, tag: string): string[] {
+	const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const expression = new RegExp(
+		`<(?:[a-zA-Z0-9_]+:)?${escapedTag}\\b[^>]*>([\\s\\S]*?)<\\/(?:[a-zA-Z0-9_]+:)?${escapedTag}>`,
+		"gi",
+	);
+	const results: string[] = [];
+	for (const match of xml.matchAll(expression)) {
+		if (match[1]) {
+			const normalized = decodeXmlEntities(
+				match[1].replace(/\s+/g, " ").trim(),
+			);
+			if (normalized.length > 0) results.push(normalized);
+		}
+	}
+	return results;
+}
+
+function extractIdentifiers(xml: string): { type: string; value: string }[] {
+	const expression =
+		/<(?:[a-zA-Z0-9_]+:)?identifier\b([^>]*)>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?identifier>/gi;
+	const results: { type: string; value: string }[] = [];
+	for (const match of xml.matchAll(expression)) {
+		const attrs = match[1] ?? "";
+		const raw = match[2] ?? "";
+		const value = decodeXmlEntities(raw.replace(/\s+/g, " ").trim());
+		if (!value) continue;
+		// Skip UUID identifiers
+		if (
+			/^urn:uuid:/i.test(value) ||
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+				value,
+			)
+		)
+			continue;
+		// opf:scheme or scheme attribute → use as identifier type
+		const schemeMatch = /(?:opf:)?scheme\s*=\s*["']([^"']+)["']/i.exec(attrs);
+		if (schemeMatch?.[1]) {
+			results.push({ type: schemeMatch[1].toLowerCase(), value });
+		} else {
+			// urn:type:value format (e.g. urn:isbn:978...)
+			const urnMatch = /^urn:([^:]+):(.+)$/i.exec(value);
+			if (urnMatch?.[1] && urnMatch[2]) {
+				results.push({
+					type: urnMatch[1].toLowerCase(),
+					value: urnMatch[2],
+				});
+			}
+		}
+	}
+	return results;
+}
+
 function findOpfPath(entries: Record<string, Uint8Array>): string | undefined {
 	const containerXml = readZipText(entries, "META-INF/container.xml");
 	if (containerXml) {
@@ -89,9 +151,59 @@ export const parseEpubMetadata = (buffer: ArrayBuffer) =>
 				return {} satisfies EpubMetadata;
 			}
 
+			const authors = extractAllTagContents(opfXml, "creator");
+			const tags = extractAllTagContents(opfXml, "subject");
+			const identifiers = extractIdentifiers(opfXml);
+
+			// Calibre series: <meta name="calibre:series" content="..." />
+			let series: string | undefined;
+			let seriesIndex: number | undefined;
+			const calibreSeriesMeta =
+				/<meta\b[^>]*\bname="calibre:series"\b[^>]*>/i.exec(opfXml);
+			if (calibreSeriesMeta) {
+				const c = /content="([^"]+)"/.exec(calibreSeriesMeta[0]);
+				if (c?.[1]) series = decodeXmlEntities(c[1]);
+			}
+			// EPUB 3: <meta property="belongs-to-collection">Series</meta>
+			if (!series) {
+				const epub3 =
+					/<meta\b[^>]*\bproperty="belongs-to-collection"[^>]*>([\s\S]*?)<\/meta>/i.exec(
+						opfXml,
+					);
+				if (epub3?.[1]) series = decodeXmlEntities(epub3[1].trim());
+			}
+			const calibreIndexMeta =
+				/<meta\b[^>]*\bname="calibre:series_index"\b[^>]*>/i.exec(opfXml);
+			if (calibreIndexMeta) {
+				const c = /content="([^"]+)"/.exec(calibreIndexMeta[0]);
+				if (c?.[1]) {
+					const idx = Number.parseFloat(c[1]);
+					if (!Number.isNaN(idx)) seriesIndex = idx;
+				}
+			}
+			// EPUB 3: <meta property="group-position">1</meta>
+			if (seriesIndex === undefined) {
+				const groupPos =
+					/<meta\b[^>]*\bproperty="group-position"[^>]*>([\s\S]*?)<\/meta>/i.exec(
+						opfXml,
+					);
+				if (groupPos?.[1]) {
+					const idx = Number.parseFloat(groupPos[1].trim());
+					if (!Number.isNaN(idx)) seriesIndex = idx;
+				}
+			}
+
 			return {
 				title: extractTagContent(opfXml, "title"),
-				author: extractTagContent(opfXml, "creator"),
+				authors: authors.length > 0 ? authors : undefined,
+				description: extractTagContent(opfXml, "description"),
+				publisher: extractTagContent(opfXml, "publisher"),
+				tags: tags.length > 0 ? tags : undefined,
+				language: extractTagContent(opfXml, "language"),
+				pubdate: extractTagContent(opfXml, "date"),
+				series,
+				seriesIndex,
+				identifiers: identifiers.length > 0 ? identifiers : undefined,
 			} satisfies EpubMetadata;
 		},
 		catch: (cause) =>

@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { Alert, AlertDescription } from "#/components/ui/alert";
+import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
 import { uploadBookServerFn } from "#/server/files";
 
 interface UploadDropzoneProps {
@@ -41,30 +45,26 @@ export default function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
 
 	return (
 		<form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-			<label className="block text-sm font-medium text-[var(--sea-ink)]">
-				EPUB 檔案
-				<input
+			<div className="space-y-2">
+				<Label htmlFor="epub-upload">EPUB 檔案</Label>
+				<Input
+					id="epub-upload"
 					type="file"
 					accept=".epub,application/epub+zip"
 					required
 					onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-					className="mt-1.5 block w-full text-sm"
 				/>
-			</label>
+			</div>
 
 			{error ? (
-				<p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-					{error}
-				</p>
+				<Alert variant="destructive">
+					<AlertDescription>{error}</AlertDescription>
+				</Alert>
 			) : null}
 
-			<button
-				type="submit"
-				disabled={isSubmitting}
-				className="rounded-xl bg-[var(--lagoon-deep)] px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-			>
+			<Button type="submit" disabled={isSubmitting}>
 				{isSubmitting ? "上傳中..." : "上傳並建立書籍"}
-			</button>
+			</Button>
 		</form>
 	);
 }

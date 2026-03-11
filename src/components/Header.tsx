@@ -1,5 +1,16 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowUpFromLine, LoaderCircle, LogOut } from "lucide-react";
 import { useRef, useState } from "react";
+import { Avatar, AvatarFallback } from "#/components/ui/avatar";
+import { Button } from "#/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import { authClient, useSession } from "#/lib/auth-client";
 import { uploadBookServerFn } from "#/server/files";
 import ThemeToggle from "./ThemeToggle";
@@ -11,10 +22,8 @@ export default function Header() {
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [isUploading, setIsUploading] = useState(false);
 	const [uploadError, setUploadError] = useState<string | null>(null);
-	const [menuOpen, setMenuOpen] = useState(false);
 
 	async function handleLogout() {
-		setMenuOpen(false);
 		await authClient.signOut();
 		window.location.assign("/login");
 	}
@@ -89,105 +98,50 @@ export default function Header() {
 							/>
 
 							{/* Upload button */}
-							<button
+							<Button
 								type="button"
+								variant="outline"
+								size="sm"
 								disabled={isUploading}
 								onClick={() => fileInputRef.current?.click()}
-								className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-3 py-1.5 text-xs font-semibold text-[var(--lagoon-deep)] transition hover:bg-[rgba(79,184,178,0.24)] disabled:cursor-not-allowed disabled:opacity-50"
+								className="rounded-full border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] text-[var(--lagoon-deep)] hover:bg-[rgba(79,184,178,0.24)] hover:text-[var(--lagoon-deep)] cursor-pointer"
 							>
 								{isUploading ? (
 									<>
-										<svg
-											className="h-3.5 w-3.5 animate-spin"
-											viewBox="0 0 24 24"
-											fill="none"
-											aria-hidden="true"
-										>
-											<circle
-												className="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												strokeWidth="4"
-											/>
-											<path
-												className="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-											/>
-										</svg>
+										<LoaderCircle className="animate-spin" />
 										上傳中…
 									</>
 								) : (
 									<>
-										<svg
-											viewBox="0 0 16 16"
-											fill="currentColor"
-											className="h-3.5 w-3.5"
-											aria-hidden="true"
-										>
-											<path d="M7.293 1.293a1 1 0 0 1 1.414 0l3 3a1 1 0 0 1-1.414 1.414L9 4.414V11a1 1 0 1 1-2 0V4.414L5.707 5.707A1 1 0 0 1 4.293 4.293l3-3zM2 13a1 1 0 1 1 0 2h12a1 1 0 1 1 0-2H2z" />
-										</svg>
+										<ArrowUpFromLine />
 										上傳書籍
 									</>
 								)}
-							</button>
+							</Button>
 
 							{/* User avatar with dropdown */}
-							<div className="relative">
-								<button
-									type="button"
-									onClick={() => setMenuOpen((o) => !o)}
-									className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-[rgba(79,184,178,0.2)] text-xs font-bold text-[var(--lagoon-deep)] transition hover:bg-[rgba(79,184,178,0.35)]"
-									title={user.email}
-									aria-haspopup="menu"
-									aria-expanded={menuOpen}
-								>
-									{user.email[0]?.toUpperCase()}
-								</button>
-
-								{menuOpen ? (
-									<>
-										{/* Backdrop to close on outside click */}
-										<div
-											className="fixed inset-0 z-10"
-											onClick={() => setMenuOpen(false)}
-											aria-hidden="true"
-										/>
-										<div
-											role="menu"
-											className="absolute right-0 top-9 z-20 min-w-[160px] rounded-xl border border-[var(--line)] bg-[var(--header-bg)] py-1 shadow-lg backdrop-blur-lg"
-										>
-											<p className="border-b border-[var(--line)] px-3 py-2 text-xs text-[var(--sea-ink-soft)]">
-												{user.email}
-											</p>
-											<button
-												type="button"
-												role="menuitem"
-												onClick={handleLogout}
-												className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-sm text-[var(--sea-ink)] transition hover:bg-[var(--link-bg-hover)]"
-											>
-												<svg
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="2"
-													className="h-4 w-4 flex-shrink-0"
-													aria-hidden="true"
-												>
-													<path
-														strokeLinecap="round"
-														strokeLinejoin="round"
-														d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-													/>
-												</svg>
-												登出
-											</button>
-										</div>
-									</>
-								) : null}
-							</div>
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Avatar className="h-7 w-7 cursor-pointer" title={user.email}>
+										<AvatarFallback className="bg-[rgba(79,184,178,0.2)] text-xs font-bold text-[var(--lagoon-deep)] hover:bg-[rgba(79,184,178,0.35)]">
+											{user.email[0]?.toUpperCase()}
+										</AvatarFallback>
+									</Avatar>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="min-w-[160px]">
+									<DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+										{user.email}
+									</DropdownMenuLabel>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem
+										onClick={handleLogout}
+										className="cursor-pointer gap-2"
+									>
+										<LogOut />
+										登出
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
 						</>
 					) : (
 						<div className="flex items-center gap-1.5 text-sm font-semibold">

@@ -21,7 +21,16 @@ export interface ListBooksResult {
 
 export interface CreateBookFromUploadInput {
 	title: string;
-	author: string;
+	/** Multiple authors supported. TODO: add individual author profile pages in the future */
+	authors: string[];
+	description?: string;
+	publisher?: string;
+	tags?: string[];
+	language?: string;
+	pubdate?: Date;
+	series?: string;
+	seriesIndex?: number;
+	identifiers?: { type: string; value: string }[];
 	fileName: string;
 	mimeType?: string;
 	size: number;
@@ -117,6 +126,32 @@ export const getBookById = (bookId: string) =>
 			.from(schema.identifiers)
 			.where(eq(schema.identifiers.bookId, bookId));
 
+		const seriesRows = yield* database
+			.select({ id: schema.series.id, name: schema.series.name })
+			.from(schema.booksSeriesLink)
+			.innerJoin(
+				schema.series,
+				eq(schema.booksSeriesLink.seriesId, schema.series.id),
+			)
+			.where(eq(schema.booksSeriesLink.bookId, bookId));
+
+		const languageRows = yield* database
+			.select({
+				id: schema.languages.id,
+				langCode: schema.languages.langCode,
+			})
+			.from(schema.booksLanguagesLink)
+			.innerJoin(
+				schema.languages,
+				eq(schema.booksLanguagesLink.languageId, schema.languages.id),
+			)
+			.where(eq(schema.booksLanguagesLink.bookId, bookId));
+
+		const commentRows = yield* database
+			.select({ id: schema.comments.id, text: schema.comments.text })
+			.from(schema.comments)
+			.where(eq(schema.comments.bookId, bookId));
+
 		return {
 			...book,
 			files,
@@ -124,7 +159,84 @@ export const getBookById = (bookId: string) =>
 			tags: tagRows,
 			publishers: publisherRows,
 			identifiers: identifierRows,
+			series: seriesRows,
+			languages: languageRows,
+			comments: commentRows,
 		};
+	});
+
+// ---------------------------------------------------------------------------
+// Find-or-create helpers (each requires DatabaseContext)
+// ---------------------------------------------------------------------------
+
+const findOrCreateAuthor = (name: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const existing = yield* database
+			.select({ id: schema.authors.id })
+			.from(schema.authors)
+			.where(eq(schema.authors.name, name))
+			.limit(1);
+		if (existing[0]) return existing[0].id;
+		const id = crypto.randomUUID();
+		yield* database.insert(schema.authors).values({ id, name, sort: name });
+		return id;
+	});
+
+const findOrCreateTag = (name: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const existing = yield* database
+			.select({ id: schema.tags.id })
+			.from(schema.tags)
+			.where(eq(schema.tags.name, name))
+			.limit(1);
+		if (existing[0]) return existing[0].id;
+		const id = crypto.randomUUID();
+		yield* database.insert(schema.tags).values({ id, name });
+		return id;
+	});
+
+const findOrCreatePublisher = (name: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const existing = yield* database
+			.select({ id: schema.publishers.id })
+			.from(schema.publishers)
+			.where(eq(schema.publishers.name, name))
+			.limit(1);
+		if (existing[0]) return existing[0].id;
+		const id = crypto.randomUUID();
+		yield* database.insert(schema.publishers).values({ id, name });
+		return id;
+	});
+
+const findOrCreateLanguage = (langCode: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const existing = yield* database
+			.select({ id: schema.languages.id })
+			.from(schema.languages)
+			.where(eq(schema.languages.langCode, langCode))
+			.limit(1);
+		if (existing[0]) return existing[0].id;
+		const id = crypto.randomUUID();
+		yield* database.insert(schema.languages).values({ id, langCode });
+		return id;
+	});
+
+const findOrCreateSeries = (name: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const existing = yield* database
+			.select({ id: schema.series.id })
+			.from(schema.series)
+			.where(eq(schema.series.name, name))
+			.limit(1);
+		if (existing[0]) return existing[0].id;
+		const id = crypto.randomUUID();
+		yield* database.insert(schema.series).values({ id, name });
+		return id;
 	});
 
 export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
@@ -132,33 +244,95 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 		const database = yield* DatabaseContext;
 		const now = new Date();
 		const bookId = crypto.randomUUID();
-		const authorId = crypto.randomUUID();
 		const fileId = crypto.randomUUID();
 		const uuid = crypto.randomUUID();
 		const format = input.fileName.split(".").pop()?.toLowerCase() || "epub";
 		const r2Key = r2Keys.bookFile({ bookId, fileName: input.fileName });
+		const primaryAuthor = input.authors[0] ?? "Unknown";
 
 		// TODO: database.batch()
 		yield* database.insert(schema.books).values({
 			id: bookId,
 			uuid,
 			title: input.title,
-			authorSort: input.author,
+			authorSort: primaryAuthor,
 			timestamp: now,
 			lastModified: now,
+			pubdate: input.pubdate,
+			seriesIndex: input.seriesIndex,
 			hasCover: input.hasCover ?? false,
 		});
 
-		yield* database.insert(schema.authors).values({
-			id: authorId,
-			name: input.author,
-			sort: input.author,
-		});
+		// Authors: find-or-create each, then link.
+		// TODO: add individual author profile pages in the future
+		const authorList = input.authors.length > 0 ? input.authors : ["Unknown"];
+		const authorIds = yield* Effect.forEach(
+			authorList,
+			(name) => findOrCreateAuthor(name),
+			{ concurrency: 1 },
+		);
+		for (const authorId of authorIds) {
+			yield* database
+				.insert(schema.booksAuthorsLink)
+				.values({ bookId, authorId });
+		}
 
-		yield* database.insert(schema.booksAuthorsLink).values({
-			bookId,
-			authorId,
-		});
+		// Publisher: find-or-create, then link
+		if (input.publisher?.trim()) {
+			const publisherId = yield* findOrCreatePublisher(input.publisher.trim());
+			yield* database
+				.insert(schema.booksPublishersLink)
+				.values({ bookId, publisherId });
+		}
+
+		// Tags: find-or-create each, then link
+		if (input.tags && input.tags.length > 0) {
+			const tagIds = yield* Effect.forEach(
+				input.tags,
+				(name) => findOrCreateTag(name),
+				{ concurrency: 1 },
+			);
+			for (const tagId of tagIds) {
+				yield* database.insert(schema.booksTagsLink).values({ bookId, tagId });
+			}
+		}
+
+		// Language: find-or-create, then link
+		if (input.language?.trim()) {
+			const languageId = yield* findOrCreateLanguage(input.language.trim());
+			yield* database
+				.insert(schema.booksLanguagesLink)
+				.values({ bookId, languageId });
+		}
+
+		// Series: find-or-create, then link
+		if (input.series?.trim()) {
+			const seriesId = yield* findOrCreateSeries(input.series.trim());
+			yield* database
+				.insert(schema.booksSeriesLink)
+				.values({ bookId, seriesId });
+		}
+
+		// Identifiers
+		if (input.identifiers && input.identifiers.length > 0) {
+			for (const ident of input.identifiers) {
+				yield* database.insert(schema.identifiers).values({
+					id: crypto.randomUUID(),
+					bookId,
+					type: ident.type,
+					value: ident.value,
+				});
+			}
+		}
+
+		// Description → comments table
+		if (input.description?.trim()) {
+			yield* database.insert(schema.comments).values({
+				id: crypto.randomUUID(),
+				bookId,
+				text: input.description.trim(),
+			});
+		}
 
 		yield* database.insert(schema.bookFiles).values({
 			id: fileId,
@@ -180,4 +354,137 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 				r2Key,
 			},
 		};
+	});
+
+// ---------------------------------------------------------------------------
+// updateBook
+// ---------------------------------------------------------------------------
+
+export interface UpdateBookInput {
+	bookId: string;
+	title: string;
+	/** Multiple authors, comma-separated in the UI. TODO: individual author pages */
+	authors: string[];
+	description?: string;
+	publisher?: string;
+	tags?: string[];
+	language?: string;
+	/** ISO date string (YYYY-MM-DD) or undefined/null to clear */
+	pubdate?: string | null;
+	series?: string;
+	seriesIndex?: number;
+	identifiers?: { type: string; value: string }[];
+	// TODO: rating (1–10, displayed as 0–5 stars) — requires ratings table link management
+}
+
+export const updateBook = (input: UpdateBookInput) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const now = new Date();
+		const { bookId } = input;
+		const primaryAuthor = input.authors[0] ?? "";
+
+		yield* database
+			.update(schema.books)
+			.set({
+				title: input.title,
+				authorSort: primaryAuthor,
+				pubdate: input.pubdate ? new Date(input.pubdate) : null,
+				seriesIndex: input.seriesIndex ?? null,
+				lastModified: now,
+			})
+			.where(eq(schema.books.id, bookId));
+
+		// Authors: replace all links
+		// TODO: add individual author profile pages in the future
+		yield* database
+			.delete(schema.booksAuthorsLink)
+			.where(eq(schema.booksAuthorsLink.bookId, bookId));
+		if (input.authors.length > 0) {
+			const authorIds = yield* Effect.forEach(
+				input.authors,
+				(name) => findOrCreateAuthor(name),
+				{ concurrency: 1 },
+			);
+			for (const authorId of authorIds) {
+				yield* database
+					.insert(schema.booksAuthorsLink)
+					.values({ bookId, authorId });
+			}
+		}
+
+		// Publisher: replace link
+		yield* database
+			.delete(schema.booksPublishersLink)
+			.where(eq(schema.booksPublishersLink.bookId, bookId));
+		if (input.publisher?.trim()) {
+			const publisherId = yield* findOrCreatePublisher(input.publisher.trim());
+			yield* database
+				.insert(schema.booksPublishersLink)
+				.values({ bookId, publisherId });
+		}
+
+		// Tags: replace all links
+		yield* database
+			.delete(schema.booksTagsLink)
+			.where(eq(schema.booksTagsLink.bookId, bookId));
+		if (input.tags && input.tags.length > 0) {
+			const tagIds = yield* Effect.forEach(
+				input.tags,
+				(name) => findOrCreateTag(name),
+				{ concurrency: 1 },
+			);
+			for (const tagId of tagIds) {
+				yield* database.insert(schema.booksTagsLink).values({ bookId, tagId });
+			}
+		}
+
+		// Language: replace link
+		yield* database
+			.delete(schema.booksLanguagesLink)
+			.where(eq(schema.booksLanguagesLink.bookId, bookId));
+		if (input.language?.trim()) {
+			const languageId = yield* findOrCreateLanguage(input.language.trim());
+			yield* database
+				.insert(schema.booksLanguagesLink)
+				.values({ bookId, languageId });
+		}
+
+		// Series: replace link
+		yield* database
+			.delete(schema.booksSeriesLink)
+			.where(eq(schema.booksSeriesLink.bookId, bookId));
+		if (input.series?.trim()) {
+			const seriesId = yield* findOrCreateSeries(input.series.trim());
+			yield* database
+				.insert(schema.booksSeriesLink)
+				.values({ bookId, seriesId });
+		}
+
+		// Identifiers: replace all
+		yield* database
+			.delete(schema.identifiers)
+			.where(eq(schema.identifiers.bookId, bookId));
+		if (input.identifiers && input.identifiers.length > 0) {
+			for (const ident of input.identifiers) {
+				yield* database.insert(schema.identifiers).values({
+					id: crypto.randomUUID(),
+					bookId,
+					type: ident.type,
+					value: ident.value,
+				});
+			}
+		}
+
+		// Comments (description): replace
+		yield* database
+			.delete(schema.comments)
+			.where(eq(schema.comments.bookId, bookId));
+		if (input.description?.trim()) {
+			yield* database.insert(schema.comments).values({
+				id: crypto.randomUUID(),
+				bookId,
+				text: input.description.trim(),
+			});
+		}
 	});

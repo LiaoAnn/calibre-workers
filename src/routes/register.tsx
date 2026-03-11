@@ -5,6 +5,11 @@ import {
 	useNavigate,
 } from "@tanstack/react-router";
 import { useState } from "react";
+import { Alert, AlertDescription } from "#/components/ui/alert";
+import { Button } from "#/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 
@@ -52,65 +57,64 @@ function RegisterPage() {
 
 	return (
 		<main className="page-wrap px-4 py-12">
-			<section className="island-shell mx-auto w-full max-w-md rounded-2xl p-6 sm:p-8">
-				<h1 className="mb-2 text-3xl font-bold text-[var(--sea-ink)]">註冊</h1>
+			<Card className="mx-auto w-full max-w-md">
+				<CardHeader>
+					<CardTitle className="text-3xl">註冊</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<form className="space-y-4" onSubmit={handleSubmit}>
+						<div className="space-y-2">
+							<Label htmlFor="register-name">名稱</Label>
+							<Input
+								id="register-name"
+								type="text"
+								value={name}
+								onChange={(event) => setName(event.target.value)}
+							/>
+						</div>
 
-				<form className="space-y-4" onSubmit={handleSubmit}>
-					<label className="block text-sm font-medium text-[var(--sea-ink)]">
-						名稱
-						<input
-							type="text"
-							value={name}
-							onChange={(event) => setName(event.target.value)}
-							className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
-						/>
-					</label>
+						<div className="space-y-2">
+							<Label htmlFor="register-email">Email</Label>
+							<Input
+								id="register-email"
+								type="email"
+								required
+								value={email}
+								onChange={(event) => setEmail(event.target.value)}
+							/>
+						</div>
 
-					<label className="block text-sm font-medium text-[var(--sea-ink)]">
-						Email
-						<input
-							type="email"
-							required
-							value={email}
-							onChange={(event) => setEmail(event.target.value)}
-							className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
-						/>
-					</label>
+						<div className="space-y-2">
+							<Label htmlFor="register-password">密碼</Label>
+							<Input
+								id="register-password"
+								type="password"
+								required
+								minLength={8}
+								value={password}
+								onChange={(event) => setPassword(event.target.value)}
+							/>
+						</div>
 
-					<label className="block text-sm font-medium text-[var(--sea-ink)]">
-						密碼
-						<input
-							type="password"
-							required
-							minLength={8}
-							value={password}
-							onChange={(event) => setPassword(event.target.value)}
-							className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
-						/>
-					</label>
+						{error ? (
+							<Alert variant="destructive">
+								<AlertDescription>{error}</AlertDescription>
+							</Alert>
+						) : null}
 
-					{error ? (
-						<p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-							{error}
-						</p>
-					) : null}
+						<Button type="submit" disabled={isSubmitting} className="w-full">
+							{isSubmitting ? "註冊中..." : "建立帳號"}
+						</Button>
+					</form>
 
-					<button
-						type="submit"
-						disabled={isSubmitting}
-						className="w-full rounded-xl bg-[var(--lagoon-deep)] px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-					>
-						{isSubmitting ? "註冊中..." : "建立帳號"}
-					</button>
-				</form>
-
-				<p className="mt-5 text-sm text-[var(--sea-ink-soft)]">
-					已有帳號？{" "}
-					<Link to="/login" className="underline">
-						登入
-					</Link>
-				</p>
-			</section>
+					<p className="mt-5 text-sm text-muted-foreground">
+						已有帳號？{" "}
+						<Button variant="link" asChild className="h-auto p-0">
+							<Link to="/login">登入</Link>
+						</Button>
+					</p>
+				</CardContent>
+			</Card>
 		</main>
 	);
 }

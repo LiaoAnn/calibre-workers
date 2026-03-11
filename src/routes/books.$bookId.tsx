@@ -1,4 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowDownToLine, Pencil } from "lucide-react";
+import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
 import { getBookByIdServerFn } from "#/server/books";
 
 export const Route = createFileRoute("/books/$bookId")({
@@ -16,12 +19,13 @@ function BookDetailPage() {
 
 	const authors = book.authors.map((a) => a.author.name).join("、");
 	const pubYear = book.pubdate ? new Date(book.pubdate).getFullYear() : null;
+	const description = book.comments[0]?.text;
 
 	return (
 		<main className="page-wrap px-4 py-12">
 			<div className="mx-auto w-full max-w-4xl">
 				<div className="flex flex-col gap-8 md:flex-row md:items-start">
-					{/* Left column: cover + download */}
+					{/* Left column: cover + download + edit */}
 					<div className="flex-shrink-0 md:w-56">
 						<div className="aspect-[3/4] overflow-hidden rounded-2xl border border-[var(--line)] bg-[rgba(79,184,178,0.08)]">
 							{book.hasCover ? (
@@ -39,21 +43,18 @@ function BookDetailPage() {
 									下載
 								</p>
 								{book.files.map((file) => (
-									<a
+									<Button
 										key={file.id}
-										href={`/api/books/${book.id}/files/${file.id}`}
-										className="flex items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-medium text-[var(--lagoon-deep)] no-underline transition hover:bg-[rgba(79,184,178,0.08)]"
+										variant="outline"
+										size="sm"
+										asChild
+										className="w-full justify-start gap-2"
 									>
-										<svg
-											viewBox="0 0 16 16"
-											fill="currentColor"
-											className="h-4 w-4 flex-shrink-0"
-											aria-hidden="true"
-										>
-											<path d="M8 12l-4.5-4.5 1.06-1.06L7 8.88V1h2v7.88l2.44-2.44L12.5 7.5 8 12zM2 13h12v2H2v-2z" />
-										</svg>
-										{file.format.toUpperCase()}
-									</a>
+										<a href={`/api/books/${book.id}/files/${file.id}`}>
+											<ArrowDownToLine />
+											{file.format.toUpperCase()}
+										</a>
+									</Button>
 								))}
 							</div>
 						) : null}
@@ -61,9 +62,22 @@ function BookDetailPage() {
 
 					{/* Right column: metadata */}
 					<div className="min-w-0 flex-1">
-						<h1 className="text-3xl font-bold leading-tight text-[var(--sea-ink)]">
-							{book.title}
-						</h1>
+						<div className="flex items-center justify-between gap-4">
+							<h1 className="text-3xl font-bold leading-tight text-[var(--sea-ink)]">
+								{book.title}
+							</h1>
+							<Button
+								variant="outline"
+								size="sm"
+								asChild
+								className="justify-start gap-2"
+							>
+								<Link to="/books/$bookId/edit" params={{ bookId: book.id }}>
+									<Pencil />
+									編輯 Metadata
+								</Link>
+							</Button>
+						</div>
 
 						{authors ? (
 							<p className="mt-2 text-base text-[var(--sea-ink-soft)]">
@@ -85,6 +99,30 @@ function BookDetailPage() {
 									<span className="italic opacity-50">未設定</span>
 								)}
 							</dd>
+
+							{book.series.length > 0 ? (
+								<>
+									<dt className="font-medium text-[var(--sea-ink)]">叢書</dt>
+									<dd className="text-[var(--sea-ink-soft)]">
+										{book.series.map((s) => s.name).join("、")}
+										{book.seriesIndex !== null &&
+										book.seriesIndex !== undefined ? (
+											<span className="ml-1 opacity-70">
+												#{book.seriesIndex}
+											</span>
+										) : null}
+									</dd>
+								</>
+							) : null}
+
+							{book.languages.length > 0 ? (
+								<>
+									<dt className="font-medium text-[var(--sea-ink)]">語言</dt>
+									<dd className="text-[var(--sea-ink-soft)]">
+										{book.languages.map((l) => l.langCode).join("、")}
+									</dd>
+								</>
+							) : null}
 
 							<dt className="font-medium text-[var(--sea-ink)]">識別碼</dt>
 							<dd className="space-y-0.5 text-[var(--sea-ink-soft)]">
@@ -110,12 +148,9 @@ function BookDetailPage() {
 							<div className="flex flex-wrap gap-1.5">
 								{book.tags.length > 0 ? (
 									book.tags.map((tag) => (
-										<span
-											key={tag.id}
-											className="rounded-full border border-[rgba(50,143,151,0.25)] bg-[rgba(79,184,178,0.1)] px-2.5 py-0.5 text-xs font-medium text-[var(--lagoon-deep)]"
-										>
+										<Badge key={tag.id} variant="secondary">
 											{tag.name}
-										</span>
+										</Badge>
 									))
 								) : (
 									<span className="text-xs italic text-[var(--sea-ink-soft)] opacity-50">
@@ -126,6 +161,17 @@ function BookDetailPage() {
 						</div>
 					</div>
 				</div>
+
+				{description ? (
+					<div className="mt-8 border-t border-[var(--line)] pt-6">
+						<p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)]">
+							簡介
+						</p>
+						<p className="whitespace-pre-line text-sm leading-relaxed text-[var(--sea-ink-soft)]">
+							{description}
+						</p>
+					</div>
+				) : null}
 			</div>
 		</main>
 	);

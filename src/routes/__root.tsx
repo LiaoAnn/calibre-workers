@@ -7,9 +7,8 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import Footer from "../components/Footer";
 import Header from "../components/Header";
-
+import { Button } from "../components/ui/button";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import TanStackQueryProvider from "../integrations/tanstack-query/root-provider";
 import appCss from "../styles.css?url";
@@ -52,9 +51,9 @@ function RootNotFound() {
 			<p className="text-muted-foreground">
 				The page you requested does not exist or has moved.
 			</p>
-			<Link to="/" className="underline decoration-2 underline-offset-4">
-				Back to home
-			</Link>
+			<Button variant="link" asChild>
+				<Link to="/">Back to home</Link>
+			</Button>
 		</main>
 	);
 }
@@ -70,7 +69,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<TanStackQueryProvider>
 					<Header />
 					{children}
-					<Footer />
 					<TanStackDevtools
 						config={{
 							position: "bottom-right",

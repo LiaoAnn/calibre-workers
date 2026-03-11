@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
+import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
 import { Route as ApiBooksBookIdFilesFileIdRouteImport } from './routes/api/books/$bookId/files/$fileId'
@@ -43,6 +44,11 @@ const BooksBookIdRoute = BooksBookIdRouteImport.update({
   path: '/books/$bookId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BooksBookIdEditRoute = BooksBookIdEditRouteImport.update({
+  id: '/books/$bookId_/edit',
+  path: '/books/$bookId/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
 }
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
 }
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/books/$bookId_/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
 }
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/books/$bookId'
     | '/api/auth/$'
+    | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
   fileRoutesByTo: FileRoutesByTo
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/books/$bookId'
     | '/api/auth/$'
+    | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
   id:
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/books/$bookId'
     | '/api/auth/$'
+    | '/books/$bookId_/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
   fileRoutesById: FileRoutesById
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   BooksBookIdRoute: typeof BooksBookIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  BooksBookIdEditRoute: typeof BooksBookIdEditRoute
   ApiBooksBookIdCoverRoute: typeof ApiBooksBookIdCoverRoute
   ApiBooksBookIdFilesFileIdRoute: typeof ApiBooksBookIdFilesFileIdRoute
 }
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BooksBookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/books/$bookId_/edit': {
+      id: '/books/$bookId_/edit'
+      path: '/books/$bookId/edit'
+      fullPath: '/books/$bookId/edit'
+      preLoaderRoute: typeof BooksBookIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   BooksBookIdRoute: BooksBookIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  BooksBookIdEditRoute: BooksBookIdEditRoute,
   ApiBooksBookIdCoverRoute: ApiBooksBookIdCoverRoute,
   ApiBooksBookIdFilesFileIdRoute: ApiBooksBookIdFilesFileIdRoute,
 }
