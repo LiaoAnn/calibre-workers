@@ -41,8 +41,11 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 					result.fileRecord.mimeType || "application/octet-stream",
 				);
 
-				// FIXME: extension will be .kepub if download kepub, should be .kepub.epub
-				const encodedFileName = encodeURIComponent(result.fileRecord.fileName);
+				const fileName = result.fileRecord.fileName.replace(
+					/\.kepub$/i,
+					".kepub.epub",
+				);
+				const encodedFileName = encodeURIComponent(fileName);
 				headers.set(
 					"content-disposition",
 					`attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
