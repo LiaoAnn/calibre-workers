@@ -7,6 +7,10 @@
   "features": {
     "ghcr.io/devcontainers-extra/features/cloudflare-wrangler:1": {
       "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "moby": false
     }
   },
   // Configure tool-specific properties.

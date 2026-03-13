@@ -8,6 +8,9 @@ services:
     volumes:
       - ../..:/workspaces:cached
       - pnpm_store:/home/node/.pnpm-store
+      - /var/run/docker.sock:/var/run/docker.sock
+    # allow wrangler access the container that created in the host
+    network_mode: "host"
 
 volumes:
   pnpm_store:
