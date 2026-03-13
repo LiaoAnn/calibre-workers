@@ -348,6 +348,7 @@ export const booksRelations = relations(books, ({ many }) => ({
 	identifiers: many(identifiers),
 	comments: many(comments),
 	files: many(bookFiles),
+	conversionJobs: many(conversionJobs),
 }));
 
 export const authorsRelations = relations(authors, ({ many }) => ({
@@ -473,5 +474,57 @@ export const bookFilesRelations = relations(bookFiles, ({ one }) => ({
 	book: one(books, {
 		fields: [bookFiles.bookId],
 		references: [books.id],
+	}),
+}));
+
+export type ConversionJobStatus = "pending" | "processing" | "done" | "failed";
+
+export const conversionJobs = sqliteTable(
+	"conversion_jobs",
+	{
+		id: text("id").primaryKey(),
+		bookId: text("book_id")
+			.notNull()
+			.references(() => books.id, { onDelete: "cascade" }),
+		sourceFileId: text("source_file_id")
+			.notNull()
+			.references(() => bookFiles.id, { onDelete: "cascade" }),
+		targetFormat: text("target_format").notNull(),
+		status: text("status")
+			.$type<ConversionJobStatus>()
+			.notNull()
+			.default("pending"),
+		resultFileId: text("result_file_id").references(() => bookFiles.id, {
+			onDelete: "set null",
+		}),
+		errorMessage: text("error_message"),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("conversion_jobs_book_idx").on(table.bookId),
+		index("conversion_jobs_status_idx").on(table.status),
+	],
+);
+
+export const conversionJobsRelations = relations(conversionJobs, ({ one }) => ({
+	book: one(books, {
+		fields: [conversionJobs.bookId],
+		references: [books.id],
+	}),
+	sourceFile: one(bookFiles, {
+		fields: [conversionJobs.sourceFileId],
+		references: [bookFiles.id],
+		relationName: "sourceFile",
+	}),
+	resultFile: one(bookFiles, {
+		fields: [conversionJobs.resultFileId],
+		references: [bookFiles.id],
+		relationName: "resultFile",
 	}),
 }));

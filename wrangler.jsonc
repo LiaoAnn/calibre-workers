@@ -26,5 +26,44 @@
       "binding": "BOOKS_STORAGE",
       "bucket_name": "calibre-books"
     },
+  ],
+  "queues": {
+    "producers": [
+      {
+        "queue": "calibre-conversion",
+        "binding": "CONVERSION_QUEUE"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "calibre-conversion",
+        "max_batch_size": 5,
+        "max_batch_timeout": 30,
+        "max_retries": 2
+      }
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CONVERTER",
+        "class_name": "ConverterContainer"
+      }
+    ]
+  },
+  "containers": [
+    {
+      "class_name": "ConverterContainer",
+      "image": "./src/containers/converter/Dockerfile",
+      "max_instances": 5
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "ConverterContainer"
+      ]
+    }
   ]
 }
