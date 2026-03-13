@@ -1,10 +1,20 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
+import { Combobox } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
+import {
+	searchAuthorsServerFn,
+	searchIdentifierTypesServerFn,
+	searchLanguagesServerFn,
+	searchPublishersServerFn,
+	searchSeriesServerFn,
+	searchTagsServerFn,
+} from "#/server/autocomplete";
 import { getBookByIdServerFn, updateBookServerFn } from "#/server/books";
 
 export const Route = createFileRoute("/books/$bookId_/edit")({
@@ -23,11 +33,8 @@ function EditBookPage() {
 	const navigate = useNavigate();
 
 	const [title, setTitle] = useState(book.title);
-	// Multiple authors joined by ", " for display.
-	// TODO: add individual author profile pages in the future
-	const [authorsStr, setAuthorsStr] = useState(
-		book.authors.map((a) => a.author.name).join(", "),
-	);
+	// Authors stored as comma-separated string in the database
+	const [authorsStr, setAuthorsStr] = useState(book.authors ?? "");
 	const [description, setDescription] = useState(book.comments[0]?.text ?? "");
 	const [publisher, setPublisher] = useState(book.publishers[0]?.name ?? "");
 	const [tagsStr, setTagsStr] = useState(
@@ -48,6 +55,77 @@ function EditBookPage() {
 	);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	// Autocomplete queries with TanStack Query caching
+	const { data: authorOptions = [] } = useQuery({
+		queryKey: ["autocomplete", "authors"],
+		queryFn: () =>
+			searchAuthorsServerFn({ data: { query: "" } }).then((results) =>
+				results.map((name) => ({ value: name, label: name })),
+			),
+		staleTime: 60_000,
+	});
+
+	const { data: tagOptions = [] } = useQuery({
+		queryKey: ["autocomplete", "tags"],
+		queryFn: () =>
+			searchTagsServerFn({ data: { query: "" } }).then((results) =>
+				results.map((name) => ({ value: name, label: name })),
+			),
+		staleTime: 60_000,
+	});
+
+	const { data: seriesOptions = [] } = useQuery({
+		queryKey: ["autocomplete", "series"],
+		queryFn: () =>
+			searchSeriesServerFn({ data: { query: "" } }).then((results) =>
+				results.map((name) => ({ value: name, label: name })),
+			),
+		staleTime: 60_000,
+	});
+
+	const { data: publisherOptions = [] } = useQuery({
+		queryKey: ["autocomplete", "publishers"],
+		queryFn: () =>
+			searchPublishersServerFn({ data: { query: "" } }).then((results) =>
+				results.map((name) => ({ value: name, label: name })),
+			),
+		staleTime: 60_000,
+	});
+
+	const { data: languageOptions = [] } = useQuery({
+		queryKey: ["autocomplete", "languages"],
+		queryFn: () =>
+			searchLanguagesServerFn({ data: { query: "" } }).then((results) =>
+				results.map((code) => ({ value: code, label: code })),
+			),
+		staleTime: 60_000,
+	});
+
+	const { data: identifierTypeOptions = [] } = useQuery({
+		queryKey: ["autocomplete", "identifierTypes"],
+		queryFn: () =>
+			searchIdentifierTypesServerFn({
+				data: { query: "" },
+			}).then((results) =>
+				results.map((type) => ({ value: type, label: type })),
+			),
+		staleTime: 60_000,
+	});
+
+	// Parse authors string to array for multi-select
+	const authorsArray = authorsStr
+		.split(",")
+		.map((a) => a.trim())
+		.filter(Boolean);
+	const setAuthorsFromArray = (arr: string[]) => setAuthorsStr(arr.join(", "));
+
+	// Parse tags string to array for multi-select
+	const tagsArray = tagsStr
+		.split(",")
+		.map((t) => t.trim())
+		.filter(Boolean);
+	const setTagsFromArray = (arr: string[]) => setTagsStr(arr.join(", "));
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -132,48 +210,46 @@ function EditBookPage() {
 
 					{/* 作者（多作者，逗號分隔） */}
 					<div className="space-y-2">
-						<Label htmlFor="edit-authors">
-							作者
-							<span className="ml-1 font-normal text-muted-foreground">
-								（多位作者以逗號分隔）
-							</span>
-						</Label>
-						{/* TODO: add individual author profile pages in the future */}
-						<Input
-							id="edit-authors"
-							type="text"
-							value={authorsStr}
-							onChange={(e) => setAuthorsStr(e.target.value)}
-							placeholder="例：作者一, 作者二"
+						<Label>作者</Label>
+						<Combobox
+							options={authorOptions}
+							value={authorsArray}
+							onChange={(val) => setAuthorsFromArray(val as string[])}
+							placeholder="選擇或輸入作者..."
+							emptyText="沒有找到作者"
+							multi
 						/>
+						<p className="text-xs text-muted-foreground">
+							可輸入新作者名稱後按 Enter 新增
+						</p>
 					</div>
 
 					{/* 標籤 */}
 					<div className="space-y-2">
-						<Label htmlFor="edit-tags">
-							標籤
-							<span className="ml-1 font-normal text-muted-foreground">
-								（多個標籤以逗號分隔）
-							</span>
-						</Label>
-						<Input
-							id="edit-tags"
-							type="text"
-							value={tagsStr}
-							onChange={(e) => setTagsStr(e.target.value)}
-							placeholder="例：科幻, 小說"
+						<Label>標籤</Label>
+						<Combobox
+							options={tagOptions}
+							value={tagsArray}
+							onChange={(val) => setTagsFromArray(val as string[])}
+							placeholder="選擇或輸入標籤..."
+							emptyText="沒有找到標籤"
+							multi
 						/>
+						<p className="text-xs text-muted-foreground">
+							可輸入新標籤名稱後按 Enter 新增
+						</p>
 					</div>
 
 					{/* 叢書 + 叢書編號 */}
 					<div className="flex gap-3">
 						<div className="flex-1 space-y-2">
-							<Label htmlFor="edit-series">叢書</Label>
-							<Input
-								id="edit-series"
-								type="text"
+							<Label>叢書</Label>
+							<Combobox
+								options={seriesOptions}
 								value={series}
-								onChange={(e) => setSeries(e.target.value)}
+								onChange={(val) => setSeries(val as string)}
+								placeholder="選擇或輸入叢書..."
+								emptyText="沒有找到叢書"
 							/>
 						</div>
 						<div className="w-28 space-y-2">
@@ -202,24 +278,25 @@ function EditBookPage() {
 
 					{/* 出版社 */}
 					<div className="space-y-2">
-						<Label htmlFor="edit-publisher">出版社</Label>
-						<Input
-							id="edit-publisher"
-							type="text"
+						<Label>出版社</Label>
+						<Combobox
+							options={publisherOptions}
 							value={publisher}
-							onChange={(e) => setPublisher(e.target.value)}
+							onChange={(val) => setPublisher(val as string)}
+							placeholder="選擇或輸入出版社..."
+							emptyText="沒有找到出版社"
 						/>
 					</div>
 
 					{/* 語言 */}
 					<div className="space-y-2">
-						<Label htmlFor="edit-language">語言</Label>
-						<Input
-							id="edit-language"
-							type="text"
+						<Label>語言</Label>
+						<Combobox
+							options={languageOptions}
 							value={language}
-							onChange={(e) => setLanguage(e.target.value)}
-							placeholder="例：zh-TW, en"
+							onChange={(val) => setLanguage(val as string)}
+							placeholder="選擇或輸入語言代碼..."
+							emptyText="沒有找到語言"
 						/>
 					</div>
 
@@ -253,15 +330,17 @@ function EditBookPage() {
 							{identifiers.map((ident, idx) => (
 								// biome-ignore lint/suspicious/noArrayIndexKey: order is stable within this form
 								<div key={idx} className="flex gap-2">
-									<Input
-										type="text"
-										value={ident.type}
-										onChange={(e) =>
-											updateIdentifier(idx, "type", e.target.value)
-										}
-										placeholder="類型（如 isbn）"
-										className="w-32"
-									/>
+									<div className="w-32">
+										<Combobox
+											options={identifierTypeOptions}
+											value={ident.type}
+											onChange={(val) =>
+												updateIdentifier(idx, "type", val as string)
+											}
+											placeholder="類型"
+											emptyText="沒有找到類型"
+										/>
+									</div>
 									<Input
 										type="text"
 										value={ident.value}

@@ -29,7 +29,11 @@ function BookDetailPage() {
 		new Map(),
 	);
 
-	const authors = book.authors.map((a) => a.author.name).join("、");
+	const authors =
+		book.authors
+			?.split(",")
+			.map((a) => a.trim())
+			.join("、") ?? "";
 	const pubYear = book.pubdate ? new Date(book.pubdate).getFullYear() : null;
 	const description = book.comments[0]?.text;
 

@@ -86,19 +86,6 @@ export const getBookById = (bookId: string) =>
 			.from(schema.bookFiles)
 			.where(eq(schema.bookFiles.bookId, bookId));
 
-		const authorRows = yield* database
-			.select({
-				id: schema.authors.id,
-				name: schema.authors.name,
-				sort: schema.authors.sort,
-			})
-			.from(schema.booksAuthorsLink)
-			.innerJoin(
-				schema.authors,
-				eq(schema.booksAuthorsLink.authorId, schema.authors.id),
-			)
-			.where(eq(schema.booksAuthorsLink.bookId, bookId));
-
 		const tagRows = yield* database
 			.select({ id: schema.tags.id, name: schema.tags.name })
 			.from(schema.booksTagsLink)
@@ -155,7 +142,6 @@ export const getBookById = (bookId: string) =>
 		return {
 			...book,
 			files,
-			authors: authorRows.map((a) => ({ bookId, authorId: a.id, author: a })),
 			tags: tagRows,
 			publishers: publisherRows,
 			identifiers: identifierRows,
@@ -168,20 +154,6 @@ export const getBookById = (bookId: string) =>
 // ---------------------------------------------------------------------------
 // Find-or-create helpers (each requires DatabaseContext)
 // ---------------------------------------------------------------------------
-
-const findOrCreateAuthor = (name: string) =>
-	Effect.gen(function* () {
-		const database = yield* DatabaseContext;
-		const existing = yield* database
-			.select({ id: schema.authors.id })
-			.from(schema.authors)
-			.where(eq(schema.authors.name, name))
-			.limit(1);
-		if (existing[0]) return existing[0].id;
-		const id = crypto.randomUUID();
-		yield* database.insert(schema.authors).values({ id, name, sort: name });
-		return id;
-	});
 
 const findOrCreateTag = (name: string) =>
 	Effect.gen(function* () {
@@ -248,34 +220,20 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 		const uuid = crypto.randomUUID();
 		const format = input.fileName.split(".").pop()?.toLowerCase() || "epub";
 		const r2Key = r2Keys.bookFile({ bookId, fileName: input.fileName });
-		const primaryAuthor = input.authors[0] ?? "Unknown";
+		const authorsStr = input.authors.join(", ") || "Unknown";
 
 		// TODO: database.batch()
 		yield* database.insert(schema.books).values({
 			id: bookId,
 			uuid,
 			title: input.title,
-			authorSort: primaryAuthor,
+			authors: authorsStr,
 			timestamp: now,
 			lastModified: now,
 			pubdate: input.pubdate,
 			seriesIndex: input.seriesIndex,
 			hasCover: input.hasCover ?? false,
 		});
-
-		// Authors: find-or-create each, then link.
-		// TODO: add individual author profile pages in the future
-		const authorList = input.authors.length > 0 ? input.authors : ["Unknown"];
-		const authorIds = yield* Effect.forEach(
-			authorList,
-			(name) => findOrCreateAuthor(name),
-			{ concurrency: 1 },
-		);
-		for (const authorId of authorIds) {
-			yield* database
-				.insert(schema.booksAuthorsLink)
-				.values({ bookId, authorId });
-		}
 
 		// Publisher: find-or-create, then link
 		if (input.publisher?.trim()) {
@@ -382,36 +340,18 @@ export const updateBook = (input: UpdateBookInput) =>
 		const database = yield* DatabaseContext;
 		const now = new Date();
 		const { bookId } = input;
-		const primaryAuthor = input.authors[0] ?? "";
+		const authorsStr = input.authors.join(", ");
 
 		yield* database
 			.update(schema.books)
 			.set({
 				title: input.title,
-				authorSort: primaryAuthor,
+				authors: authorsStr || null,
 				pubdate: input.pubdate ? new Date(input.pubdate) : null,
 				seriesIndex: input.seriesIndex ?? null,
 				lastModified: now,
 			})
 			.where(eq(schema.books.id, bookId));
-
-		// Authors: replace all links
-		// TODO: add individual author profile pages in the future
-		yield* database
-			.delete(schema.booksAuthorsLink)
-			.where(eq(schema.booksAuthorsLink.bookId, bookId));
-		if (input.authors.length > 0) {
-			const authorIds = yield* Effect.forEach(
-				input.authors,
-				(name) => findOrCreateAuthor(name),
-				{ concurrency: 1 },
-			);
-			for (const authorId of authorIds) {
-				yield* database
-					.insert(schema.booksAuthorsLink)
-					.values({ bookId, authorId });
-			}
-		}
 
 		// Publisher: replace link
 		yield* database

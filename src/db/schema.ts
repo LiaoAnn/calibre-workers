@@ -120,7 +120,7 @@ export const books = sqliteTable(
 		uuid: text("uuid").notNull().unique(),
 		title: text("title").notNull(),
 		sort: text("sort"),
-		authorSort: text("author_sort"),
+		authors: text("authors"),
 		timestamp: integer("timestamp", { mode: "timestamp_ms" })
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.notNull(),
@@ -135,33 +135,6 @@ export const books = sqliteTable(
 			.notNull(),
 	},
 	(table) => [index("books_title_idx").on(table.title)],
-);
-
-export const authors = sqliteTable(
-	"authors",
-	{
-		id: text("id").primaryKey(),
-		name: text("name").notNull(),
-		sort: text("sort"),
-	},
-	(table) => [index("authors_name_idx").on(table.name)],
-);
-
-export const booksAuthorsLink = sqliteTable(
-	"books_authors_link",
-	{
-		bookId: text("book_id")
-			.notNull()
-			.references(() => books.id, { onDelete: "cascade" }),
-		authorId: text("author_id")
-			.notNull()
-			.references(() => authors.id, { onDelete: "cascade" }),
-	},
-	(table) => [
-		primaryKey({ columns: [table.bookId, table.authorId] }),
-		index("books_authors_book_idx").on(table.bookId),
-		index("books_authors_author_idx").on(table.authorId),
-	],
 );
 
 export const tags = sqliteTable(
@@ -339,7 +312,6 @@ export const bookFiles = sqliteTable(
 );
 
 export const booksRelations = relations(books, ({ many }) => ({
-	authors: many(booksAuthorsLink),
 	tags: many(booksTagsLink),
 	series: many(booksSeriesLink),
 	ratings: many(booksRatingsLink),
@@ -350,24 +322,6 @@ export const booksRelations = relations(books, ({ many }) => ({
 	files: many(bookFiles),
 	conversionJobs: many(conversionJobs),
 }));
-
-export const authorsRelations = relations(authors, ({ many }) => ({
-	books: many(booksAuthorsLink),
-}));
-
-export const booksAuthorsLinkRelations = relations(
-	booksAuthorsLink,
-	({ one }) => ({
-		book: one(books, {
-			fields: [booksAuthorsLink.bookId],
-			references: [books.id],
-		}),
-		author: one(authors, {
-			fields: [booksAuthorsLink.authorId],
-			references: [authors.id],
-		}),
-	}),
-);
 
 export const tagsRelations = relations(tags, ({ many }) => ({
 	books: many(booksTagsLink),
