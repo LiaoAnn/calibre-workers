@@ -1,14 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ArrowDownToLine, Loader2, Pencil, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { useConversionTasks } from "#/hooks/useConversionTasks";
 import { getBookByIdServerFn } from "#/server/books";
-import {
-	getConversionJobServerFn,
-	triggerConversionServerFn,
-} from "#/server/conversions";
 
 export const Route = createFileRoute("/books/$bookId")({
 	loader: ({ params }) =>
@@ -23,11 +19,6 @@ export const Route = createFileRoute("/books/$bookId")({
 function BookDetailPage() {
 	const book = Route.useLoaderData();
 	const router = useRouter();
-
-	// fileId → jobId for in-progress conversions
-	const [pendingJobs, setPendingJobs] = useState<Map<string, string>>(
-		new Map(),
-	);
 
 	const authors =
 		book.authors
@@ -44,21 +35,42 @@ function BookDetailPage() {
 	const canConvertToKepub =
 		epubFiles.length > 0 && !existingFormats.has("kepub");
 
+	const { activeTasks: activeConversionTasks, triggerConversion } =
+		useConversionTasks({ bookId: book.id, limit: 200 });
+	const prevActiveCountRef = useRef(0);
+
+	const activeConversionBySourceFileId = new Map(
+		activeConversionTasks
+			.filter(
+				(task) =>
+					task.bookId === book.id &&
+					task.sourceFileId &&
+					(task.status === "pending" || task.status === "processing"),
+			)
+			.map((task) => [task.sourceFileId as string, task]),
+	);
+
 	async function handleConvertToKepub(fileId: string) {
-		const { jobId } = await triggerConversionServerFn({
-			data: { bookId: book.id, fileId, targetFormat: "kepub" },
+		await triggerConversion({
+			bookId: book.id,
+			fileId,
+			targetFormat: "kepub",
 		});
-		setPendingJobs((prev) => new Map(prev).set(fileId, jobId));
 	}
 
-	function handleJobDone(fileId: string) {
-		setPendingJobs((prev) => {
-			const next = new Map(prev);
-			next.delete(fileId);
-			return next;
-		});
-		router.invalidate();
-	}
+	useEffect(() => {
+		const currentActiveCount = activeConversionTasks.filter(
+			(task) => task.bookId === book.id,
+		).length;
+
+		// When transitioning from active tasks to no active tasks, refresh the page
+		if (prevActiveCountRef.current > 0 && currentActiveCount === 0) {
+			// Refresh the book page once all conversions for this book have settled
+			router.invalidate();
+		}
+
+		prevActiveCountRef.current = currentActiveCount;
+	}, [activeConversionTasks, book.id, router]);
 
 	return (
 		<main className="page-wrap px-4 py-12">
@@ -104,21 +116,17 @@ function BookDetailPage() {
 									格式轉換
 								</p>
 								{epubFiles.map((file) => {
-									const jobId = pendingJobs.get(file.id);
-									return jobId ? (
+									const activeTask = activeConversionBySourceFileId.get(
+										file.id,
+									);
+									return activeTask ? (
 										<ConversionJobTracker
 											key={file.id}
-											jobId={jobId}
-											fileId={file.id}
-											onDone={() => handleJobDone(file.id)}
-											onFailed={(msg) => {
-												setPendingJobs((prev) => {
-													const next = new Map(prev);
-													next.delete(file.id);
-													return next;
-												});
-												console.error("Conversion failed:", msg);
-											}}
+											status={
+												activeTask.status === "processing"
+													? "processing"
+													: "pending"
+											}
 										/>
 									) : (
 										<Button
@@ -255,33 +263,11 @@ function BookDetailPage() {
 }
 
 interface ConversionJobTrackerProps {
-	jobId: string;
-	fileId: string;
-	onDone: () => void;
-	onFailed: (errorMessage: string) => void;
+	status: "pending" | "processing";
 }
 
-function ConversionJobTracker({
-	jobId,
-	onDone,
-	onFailed,
-}: ConversionJobTrackerProps) {
-	const { data } = useQuery({
-		queryKey: ["conversion-job", jobId],
-		queryFn: () => getConversionJobServerFn({ data: { jobId } }),
-		refetchInterval: (query) => {
-			const status = query.state.data?.status;
-			if (status === "done" || status === "failed") return false;
-			return 3000;
-		},
-	});
-
-	useEffect(() => {
-		if (data?.status === "done") onDone();
-		if (data?.status === "failed") onFailed(data.errorMessage ?? "轉換失敗");
-	}, [data, onDone, onFailed]);
-
-	const label = data?.status === "processing" ? "轉換中..." : "排隊中...";
+function ConversionJobTracker({ status }: ConversionJobTrackerProps) {
+	const label = status === "processing" ? "轉換中..." : "排隊中...";
 
 	return (
 		<Button

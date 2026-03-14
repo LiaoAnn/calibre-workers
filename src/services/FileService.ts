@@ -17,7 +17,7 @@ class StorageError extends Data.TaggedError("StorageError")<{
 
 interface UploadBookFileInput {
 	r2Key: string;
-	body: ArrayBuffer | ArrayBufferView;
+	body: ArrayBuffer | ArrayBufferView | ReadableStream<Uint8Array>;
 	contentType?: string;
 }
 
@@ -32,6 +32,16 @@ export const uploadBookFile = ({
 		yield* Effect.tryPromise({
 			try: () => storage.put(r2Key, body, { httpMetadata: { contentType } }),
 			catch: (cause) => new StorageError({ operation: "file.upload", cause }),
+		});
+	});
+
+export const deleteBookFile = (r2Key: string) =>
+	Effect.gen(function* () {
+		const storage = yield* R2Context;
+
+		yield* Effect.tryPromise({
+			try: () => storage.delete(r2Key),
+			catch: (cause) => new StorageError({ operation: "file.delete", cause }),
 		});
 	});
 

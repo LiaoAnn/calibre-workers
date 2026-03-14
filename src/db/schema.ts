@@ -350,3 +350,47 @@ export const conversionJobsRelations = relations(conversionJobs, ({ one }) => ({
 		relationName: "resultFile",
 	}),
 }));
+
+// Upload Tasks - Track file upload status for notification center
+type UploadTaskStatus = "pending" | "processing" | "success" | "failed";
+
+export const uploadTasks = sqliteTable(
+	"upload_tasks",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+		// for identifying the file that upload failed
+		fileName: text("file_name").notNull(),
+		status: text("status")
+			.$type<UploadTaskStatus>()
+			.notNull()
+			.default("pending"),
+		bookId: text("book_id").references(() => books.id, {
+			onDelete: "set null",
+		}),
+		errorMessage: text("error_message"),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("upload_tasks_user_idx").on(table.userId),
+		index("upload_tasks_status_idx").on(table.status),
+		index("upload_tasks_created_idx").on(table.createdAt),
+	],
+);
+
+export const uploadTasksRelations = relations(uploadTasks, ({ one }) => ({
+	user: one(user, {
+		fields: [uploadTasks.userId],
+		references: [user.id],
+	}),
+	book: one(books, {
+		fields: [uploadTasks.bookId],
+		references: [books.id],
+	}),
+}));

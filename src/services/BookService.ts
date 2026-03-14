@@ -359,3 +359,19 @@ export const updateBook = (input: UpdateBookInput) =>
 			});
 		}
 	});
+
+// ---------------------------------------------------------------------------
+// deleteBook - Used for rollback cleanup during upload failures
+// ---------------------------------------------------------------------------
+
+export const deleteBook = (bookId: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+
+		// Due to cascade deletes in schema, deleting the book will clean up:
+		// - bookFiles records
+		// - booksTagsLink records
+		// - identifiers
+		// - comments
+		yield* database.delete(schema.books).where(eq(schema.books.id, bookId));
+	});

@@ -7,11 +7,15 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import Header from "../components/Header";
-import { Button } from "../components/ui/button";
-import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
-import TanStackQueryProvider from "../integrations/tanstack-query/root-provider";
-import appCss from "../styles.css?url";
+import { useEffect } from "react";
+import Header from "#/components/Header";
+import { TaskToastListener } from "#/components/TaskToastListener";
+import { Button } from "#/components/ui/button";
+import { Toaster } from "#/components/ui/sonner";
+import { useHasActiveNotificationTasks } from "#/hooks/useNotificationTasks";
+import TanStackQueryDevtools from "#/integrations/tanstack-query/devtools";
+import TanStackQueryProvider from "#/integrations/tanstack-query/root-provider";
+import appCss from "#/styles.css?url";
 
 interface MyRouterContext {
 	queryClient: QueryClient;
@@ -58,6 +62,23 @@ function RootNotFound() {
 	);
 }
 
+function BeforeUnloadHandler() {
+	const hasActiveTasks = useHasActiveNotificationTasks();
+
+	useEffect(() => {
+		if (!hasActiveTasks) return;
+
+		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+			e.preventDefault();
+		};
+
+		window.addEventListener("beforeunload", handleBeforeUnload);
+		return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+	}, [hasActiveTasks]);
+
+	return null;
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="zh-TW" suppressHydrationWarning>
@@ -67,6 +88,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
 				<TanStackQueryProvider>
+					<Toaster position="bottom-right" />
+					<TaskToastListener />
+					<BeforeUnloadHandler />
 					<Header />
 					{children}
 					<TanStackDevtools
