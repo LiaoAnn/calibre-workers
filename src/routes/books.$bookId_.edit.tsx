@@ -36,15 +36,15 @@ function EditBookPage() {
 	// Authors stored as comma-separated string in the database
 	const [authorsStr, setAuthorsStr] = useState(book.authors ?? "");
 	const [description, setDescription] = useState(book.comments[0]?.text ?? "");
-	const [publisher, setPublisher] = useState(book.publishers[0]?.name ?? "");
+	const [publisher, setPublisher] = useState(book.publisher?.name ?? "");
 	const [tagsStr, setTagsStr] = useState(
 		book.tags.map((t) => t.name).join(", "),
 	);
-	const [language, setLanguage] = useState(book.languages[0]?.langCode ?? "");
+	const [language, setLanguage] = useState(book.language ?? "");
 	const [pubdate, setPubdate] = useState(
 		book.pubdate ? new Date(book.pubdate).toISOString().split("T")[0] : "",
 	);
-	const [series, setSeries] = useState(book.series[0]?.name ?? "");
+	const [series, setSeries] = useState(book.series?.name ?? "");
 	const [seriesIndex, setSeriesIndex] = useState(
 		book.seriesIndex !== null && book.seriesIndex !== undefined
 			? String(book.seriesIndex)

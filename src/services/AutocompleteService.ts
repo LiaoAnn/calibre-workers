@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { like, sql } from "drizzle-orm";
+import { isNotNull, like } from "drizzle-orm";
 import { Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
@@ -19,7 +19,7 @@ export const searchAuthors = (query: string, limit = DEFAULT_LIMIT) =>
 		const rows = yield* database
 			.select({ authors: schema.books.authors })
 			.from(schema.books)
-			.where(sql`${schema.books.authors} IS NOT NULL`);
+			.where(isNotNull(schema.books.authors));
 
 		// Split by comma, trim, deduplicate, and filter by query
 		const authorSet = new Set<string>();
@@ -92,19 +92,27 @@ export const searchPublishers = (query: string, limit = DEFAULT_LIMIT) =>
 	});
 
 /**
- * Search for languages by lang_code.
+ * Search for languages from the books table.
  */
 export const searchLanguages = (query: string, limit = DEFAULT_LIMIT) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
 
 		const rows = yield* database
-			.select({ langCode: schema.languages.langCode })
-			.from(schema.languages)
-			.where(query ? like(schema.languages.langCode, `%${query}%`) : undefined)
-			.limit(limit);
+			.selectDistinct({ language: schema.books.language })
+			.from(schema.books)
+			.where(isNotNull(schema.books.language));
 
-		return rows.map((r) => r.langCode);
+		const languages = rows.map((r) => r.language).filter(Boolean) as string[];
+		const sorted = languages.sort();
+
+		const filtered = query
+			? sorted.filter((lang) =>
+					lang.toLowerCase().includes(query.toLowerCase()),
+				)
+			: sorted;
+
+		return filtered.slice(0, limit);
 	});
 
 /**

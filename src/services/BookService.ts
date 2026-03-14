@@ -92,18 +92,13 @@ export const getBookById = (bookId: string) =>
 			.innerJoin(schema.tags, eq(schema.booksTagsLink.tagId, schema.tags.id))
 			.where(eq(schema.booksTagsLink.bookId, bookId));
 
-		const publisherRows = yield* database
-			.select({
-				id: schema.publishers.id,
-				name: schema.publishers.name,
-			})
-			.from(schema.booksPublishersLink)
-			.innerJoin(
-				schema.publishers,
-				eq(schema.booksPublishersLink.publisherId, schema.publishers.id),
-			)
-			.where(eq(schema.booksPublishersLink.bookId, bookId));
-
+		const publisherRow = book.publisherId
+			? (yield* database
+					.select({ id: schema.publishers.id, name: schema.publishers.name })
+					.from(schema.publishers)
+					.where(eq(schema.publishers.id, book.publisherId))
+					.limit(1))[0]
+			: undefined;
 		const identifierRows = yield* database
 			.select({
 				id: schema.identifiers.id,
@@ -113,27 +108,13 @@ export const getBookById = (bookId: string) =>
 			.from(schema.identifiers)
 			.where(eq(schema.identifiers.bookId, bookId));
 
-		const seriesRows = yield* database
-			.select({ id: schema.series.id, name: schema.series.name })
-			.from(schema.booksSeriesLink)
-			.innerJoin(
-				schema.series,
-				eq(schema.booksSeriesLink.seriesId, schema.series.id),
-			)
-			.where(eq(schema.booksSeriesLink.bookId, bookId));
-
-		const languageRows = yield* database
-			.select({
-				id: schema.languages.id,
-				langCode: schema.languages.langCode,
-			})
-			.from(schema.booksLanguagesLink)
-			.innerJoin(
-				schema.languages,
-				eq(schema.booksLanguagesLink.languageId, schema.languages.id),
-			)
-			.where(eq(schema.booksLanguagesLink.bookId, bookId));
-
+		const seriesRow = book.seriesId
+			? (yield* database
+					.select({ id: schema.series.id, name: schema.series.name })
+					.from(schema.series)
+					.where(eq(schema.series.id, book.seriesId))
+					.limit(1))[0]
+			: undefined;
 		const commentRows = yield* database
 			.select({ id: schema.comments.id, text: schema.comments.text })
 			.from(schema.comments)
@@ -143,10 +124,9 @@ export const getBookById = (bookId: string) =>
 			...book,
 			files,
 			tags: tagRows,
-			publishers: publisherRows,
+			publisher: publisherRow,
 			identifiers: identifierRows,
-			series: seriesRows,
-			languages: languageRows,
+			series: seriesRow,
 			comments: commentRows,
 		};
 	});
@@ -183,20 +163,6 @@ const findOrCreatePublisher = (name: string) =>
 		return id;
 	});
 
-const findOrCreateLanguage = (langCode: string) =>
-	Effect.gen(function* () {
-		const database = yield* DatabaseContext;
-		const existing = yield* database
-			.select({ id: schema.languages.id })
-			.from(schema.languages)
-			.where(eq(schema.languages.langCode, langCode))
-			.limit(1);
-		if (existing[0]) return existing[0].id;
-		const id = crypto.randomUUID();
-		yield* database.insert(schema.languages).values({ id, langCode });
-		return id;
-	});
-
 const findOrCreateSeries = (name: string) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
@@ -223,6 +189,14 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 		const authorsStr = input.authors.join(", ") || "Unknown";
 
 		// TODO: database.batch()
+		// Publisher & Series: find-or-create first
+		const publisherId = input.publisher?.trim()
+			? yield* findOrCreatePublisher(input.publisher.trim())
+			: null;
+		const seriesId = input.series?.trim()
+			? yield* findOrCreateSeries(input.series.trim())
+			: null;
+
 		yield* database.insert(schema.books).values({
 			id: bookId,
 			uuid,
@@ -231,17 +205,12 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 			timestamp: now,
 			lastModified: now,
 			pubdate: input.pubdate,
+			seriesId,
 			seriesIndex: input.seriesIndex,
+			language: input.language?.trim() || null,
+			publisherId,
 			hasCover: input.hasCover ?? false,
 		});
-
-		// Publisher: find-or-create, then link
-		if (input.publisher?.trim()) {
-			const publisherId = yield* findOrCreatePublisher(input.publisher.trim());
-			yield* database
-				.insert(schema.booksPublishersLink)
-				.values({ bookId, publisherId });
-		}
 
 		// Tags: find-or-create each, then link
 		if (input.tags && input.tags.length > 0) {
@@ -253,22 +222,6 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 			for (const tagId of tagIds) {
 				yield* database.insert(schema.booksTagsLink).values({ bookId, tagId });
 			}
-		}
-
-		// Language: find-or-create, then link
-		if (input.language?.trim()) {
-			const languageId = yield* findOrCreateLanguage(input.language.trim());
-			yield* database
-				.insert(schema.booksLanguagesLink)
-				.values({ bookId, languageId });
-		}
-
-		// Series: find-or-create, then link
-		if (input.series?.trim()) {
-			const seriesId = yield* findOrCreateSeries(input.series.trim());
-			yield* database
-				.insert(schema.booksSeriesLink)
-				.values({ bookId, seriesId });
 		}
 
 		// Identifiers
@@ -342,27 +295,27 @@ export const updateBook = (input: UpdateBookInput) =>
 		const { bookId } = input;
 		const authorsStr = input.authors.join(", ");
 
+		// Publisher & Series: find-or-create first
+		const publisherId = input.publisher?.trim()
+			? yield* findOrCreatePublisher(input.publisher.trim())
+			: null;
+		const seriesId = input.series?.trim()
+			? yield* findOrCreateSeries(input.series.trim())
+			: null;
+
 		yield* database
 			.update(schema.books)
 			.set({
 				title: input.title,
 				authors: authorsStr || null,
 				pubdate: input.pubdate ? new Date(input.pubdate) : null,
+				seriesId,
 				seriesIndex: input.seriesIndex ?? null,
+				language: input.language?.trim() || null,
+				publisherId,
 				lastModified: now,
 			})
 			.where(eq(schema.books.id, bookId));
-
-		// Publisher: replace link
-		yield* database
-			.delete(schema.booksPublishersLink)
-			.where(eq(schema.booksPublishersLink.bookId, bookId));
-		if (input.publisher?.trim()) {
-			const publisherId = yield* findOrCreatePublisher(input.publisher.trim());
-			yield* database
-				.insert(schema.booksPublishersLink)
-				.values({ bookId, publisherId });
-		}
 
 		// Tags: replace all links
 		yield* database
@@ -377,28 +330,6 @@ export const updateBook = (input: UpdateBookInput) =>
 			for (const tagId of tagIds) {
 				yield* database.insert(schema.booksTagsLink).values({ bookId, tagId });
 			}
-		}
-
-		// Language: replace link
-		yield* database
-			.delete(schema.booksLanguagesLink)
-			.where(eq(schema.booksLanguagesLink.bookId, bookId));
-		if (input.language?.trim()) {
-			const languageId = yield* findOrCreateLanguage(input.language.trim());
-			yield* database
-				.insert(schema.booksLanguagesLink)
-				.values({ bookId, languageId });
-		}
-
-		// Series: replace link
-		yield* database
-			.delete(schema.booksSeriesLink)
-			.where(eq(schema.booksSeriesLink.bookId, bookId));
-		if (input.series?.trim()) {
-			const seriesId = yield* findOrCreateSeries(input.series.trim());
-			yield* database
-				.insert(schema.booksSeriesLink)
-				.values({ bookId, seriesId });
 		}
 
 		// Identifiers: replace all

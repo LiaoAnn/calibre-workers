@@ -120,12 +120,21 @@ export const books = sqliteTable(
 		uuid: text("uuid").notNull().unique(),
 		title: text("title").notNull(),
 		sort: text("sort"),
+		/** Comma-separated list of authors (e.g., "Author A, Author B") */
 		authors: text("authors"),
 		timestamp: integer("timestamp", { mode: "timestamp_ms" })
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.notNull(),
 		pubdate: integer("pubdate", { mode: "timestamp_ms" }),
+		seriesId: text("series_id").references(() => series.id, {
+			onDelete: "set null",
+		}),
 		seriesIndex: real("series_index"),
+		language: text("language"),
+		publisherId: text("publisher_id").references(() => publishers.id, {
+			onDelete: "set null",
+		}),
+		rating: integer("rating"),
 		hasCover: integer("has_cover", { mode: "boolean" })
 			.default(false)
 			.notNull(),
@@ -134,7 +143,11 @@ export const books = sqliteTable(
 			.$onUpdate(() => /* @__PURE__ */ new Date())
 			.notNull(),
 	},
-	(table) => [index("books_title_idx").on(table.title)],
+	(table) => [
+		index("books_title_idx").on(table.title),
+		index("books_series_idx").on(table.seriesId),
+		index("books_publisher_idx").on(table.publisherId),
+	],
 );
 
 export const tags = sqliteTable(
@@ -173,71 +186,6 @@ export const series = sqliteTable(
 	(table) => [index("series_name_idx").on(table.name)],
 );
 
-export const booksSeriesLink = sqliteTable(
-	"books_series_link",
-	{
-		bookId: text("book_id")
-			.notNull()
-			.references(() => books.id, { onDelete: "cascade" }),
-		seriesId: text("series_id")
-			.notNull()
-			.references(() => series.id, { onDelete: "cascade" }),
-	},
-	(table) => [
-		primaryKey({ columns: [table.bookId, table.seriesId] }),
-		index("books_series_book_idx").on(table.bookId),
-		index("books_series_series_idx").on(table.seriesId),
-	],
-);
-
-export const ratings = sqliteTable("ratings", {
-	id: text("id").primaryKey(),
-	rating: integer("rating").notNull(),
-});
-
-export const booksRatingsLink = sqliteTable(
-	"books_ratings_link",
-	{
-		bookId: text("book_id")
-			.notNull()
-			.references(() => books.id, { onDelete: "cascade" }),
-		ratingId: text("rating_id")
-			.notNull()
-			.references(() => ratings.id, { onDelete: "cascade" }),
-	},
-	(table) => [
-		primaryKey({ columns: [table.bookId, table.ratingId] }),
-		index("books_ratings_book_idx").on(table.bookId),
-		index("books_ratings_rating_idx").on(table.ratingId),
-	],
-);
-
-export const languages = sqliteTable(
-	"languages",
-	{
-		id: text("id").primaryKey(),
-		langCode: text("lang_code").notNull().unique(),
-	},
-	(table) => [index("languages_code_idx").on(table.langCode)],
-);
-
-export const booksLanguagesLink = sqliteTable(
-	"books_languages_link",
-	{
-		bookId: text("book_id")
-			.notNull()
-			.references(() => books.id, { onDelete: "cascade" }),
-		languageId: text("language_id")
-			.notNull()
-			.references(() => languages.id, { onDelete: "cascade" }),
-	},
-	(table) => [
-		primaryKey({ columns: [table.bookId, table.languageId] }),
-		index("books_languages_book_idx").on(table.bookId),
-		index("books_languages_language_idx").on(table.languageId),
-	],
-);
-
 export const publishers = sqliteTable(
 	"publishers",
 	{
@@ -246,23 +194,6 @@ export const publishers = sqliteTable(
 		sort: text("sort"),
 	},
 	(table) => [index("publishers_name_idx").on(table.name)],
-);
-
-export const booksPublishersLink = sqliteTable(
-	"books_publishers_link",
-	{
-		bookId: text("book_id")
-			.notNull()
-			.references(() => books.id, { onDelete: "cascade" }),
-		publisherId: text("publisher_id")
-			.notNull()
-			.references(() => publishers.id, { onDelete: "cascade" }),
-	},
-	(table) => [
-		primaryKey({ columns: [table.bookId, table.publisherId] }),
-		index("books_publishers_book_idx").on(table.bookId),
-		index("books_publishers_publisher_idx").on(table.publisherId),
-	],
 );
 
 export const identifiers = sqliteTable(
@@ -311,12 +242,13 @@ export const bookFiles = sqliteTable(
 	],
 );
 
-export const booksRelations = relations(books, ({ many }) => ({
+export const booksRelations = relations(books, ({ one, many }) => ({
 	tags: many(booksTagsLink),
-	series: many(booksSeriesLink),
-	ratings: many(booksRatingsLink),
-	languages: many(booksLanguagesLink),
-	publishers: many(booksPublishersLink),
+	series: one(series, { fields: [books.seriesId], references: [series.id] }),
+	publisher: one(publishers, {
+		fields: [books.publisherId],
+		references: [publishers.id],
+	}),
 	identifiers: many(identifiers),
 	comments: many(comments),
 	files: many(bookFiles),
@@ -339,76 +271,12 @@ export const booksTagsLinkRelations = relations(booksTagsLink, ({ one }) => ({
 }));
 
 export const seriesRelations = relations(series, ({ many }) => ({
-	books: many(booksSeriesLink),
+	books: many(books),
 }));
-
-export const booksSeriesLinkRelations = relations(
-	booksSeriesLink,
-	({ one }) => ({
-		book: one(books, {
-			fields: [booksSeriesLink.bookId],
-			references: [books.id],
-		}),
-		series: one(series, {
-			fields: [booksSeriesLink.seriesId],
-			references: [series.id],
-		}),
-	}),
-);
-
-export const ratingsRelations = relations(ratings, ({ many }) => ({
-	books: many(booksRatingsLink),
-}));
-
-export const booksRatingsLinkRelations = relations(
-	booksRatingsLink,
-	({ one }) => ({
-		book: one(books, {
-			fields: [booksRatingsLink.bookId],
-			references: [books.id],
-		}),
-		rating: one(ratings, {
-			fields: [booksRatingsLink.ratingId],
-			references: [ratings.id],
-		}),
-	}),
-);
-
-export const languagesRelations = relations(languages, ({ many }) => ({
-	books: many(booksLanguagesLink),
-}));
-
-export const booksLanguagesLinkRelations = relations(
-	booksLanguagesLink,
-	({ one }) => ({
-		book: one(books, {
-			fields: [booksLanguagesLink.bookId],
-			references: [books.id],
-		}),
-		language: one(languages, {
-			fields: [booksLanguagesLink.languageId],
-			references: [languages.id],
-		}),
-	}),
-);
 
 export const publishersRelations = relations(publishers, ({ many }) => ({
-	books: many(booksPublishersLink),
+	books: many(books),
 }));
-
-export const booksPublishersLinkRelations = relations(
-	booksPublishersLink,
-	({ one }) => ({
-		book: one(books, {
-			fields: [booksPublishersLink.bookId],
-			references: [books.id],
-		}),
-		publisher: one(publishers, {
-			fields: [booksPublishersLink.publisherId],
-			references: [publishers.id],
-		}),
-	}),
-);
 
 export const identifiersRelations = relations(identifiers, ({ one }) => ({
 	book: one(books, {

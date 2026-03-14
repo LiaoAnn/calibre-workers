@@ -30,7 +30,7 @@ export default function BookCard({ book }: BookCardProps) {
 							{book.title}
 						</h2>
 						<p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-							{book.authorSort ?? "未知作者"}
+							{book.authors ?? "未知作者"}
 						</p>
 					</div>
 				</CardContent>

@@ -170,18 +170,18 @@ function BookDetailPage() {
 
 							<dt className="font-medium text-[var(--sea-ink)]">出版社</dt>
 							<dd className="text-[var(--sea-ink-soft)]">
-								{book.publishers.length > 0 ? (
-									book.publishers.map((p) => p.name).join("、")
+								{book.publisher ? (
+									book.publisher.name
 								) : (
 									<span className="italic opacity-50">未設定</span>
 								)}
 							</dd>
 
-							{book.series.length > 0 ? (
+							{book.series ? (
 								<>
 									<dt className="font-medium text-[var(--sea-ink)]">叢書</dt>
 									<dd className="text-[var(--sea-ink-soft)]">
-										{book.series.map((s) => s.name).join("、")}
+										{book.series.name}
 										{book.seriesIndex !== null &&
 										book.seriesIndex !== undefined ? (
 											<span className="ml-1 opacity-70">
@@ -192,11 +192,11 @@ function BookDetailPage() {
 								</>
 							) : null}
 
-							{book.languages.length > 0 ? (
+							{book.language ? (
 								<>
 									<dt className="font-medium text-[var(--sea-ink)]">語言</dt>
 									<dd className="text-[var(--sea-ink-soft)]">
-										{book.languages.map((l) => l.langCode).join("、")}
+										{book.language}
 									</dd>
 								</>
 							) : null}
