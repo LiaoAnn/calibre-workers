@@ -213,6 +213,48 @@ export const parseEpubMetadata = (buffer: ArrayBuffer) =>
 			}),
 	});
 
+function getXmlAttr(tag: string, name: string): string | undefined {
+	const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = new RegExp(
+		`${escapedName}\\s*=\\s*(["'])([\\s\\S]*?)\\1`,
+		"i",
+	).exec(tag);
+	return match?.[2];
+}
+
+function normalizeZipPath(path: string): string {
+	const cleaned = path.replace(/\\/g, "/").replace(/^\/+/, "");
+	const segments = cleaned.split("/");
+	const normalized: string[] = [];
+
+	for (const segment of segments) {
+		if (!segment || segment === ".") continue;
+		if (segment === "..") {
+			normalized.pop();
+			continue;
+		}
+		normalized.push(segment);
+	}
+
+	return normalized.join("/");
+}
+
+function resolveEntryData(
+	entries: Record<string, Uint8Array>,
+	opfDir: string,
+	href: string,
+): Uint8Array | undefined {
+	const decodedHref = decodeURIComponent(href.trim());
+	const candidate = normalizeZipPath(`${opfDir}${decodedHref}`);
+	const noDotPrefix = candidate.replace(/^\.\//, "");
+
+	return (
+		entries[candidate] ??
+		entries[noDotPrefix] ??
+		entries[decodeURIComponent(candidate)]
+	);
+}
+
 export const parseEpubCover = (buffer: ArrayBuffer) =>
 	Effect.try({
 		try: (): EpubCover | undefined => {
@@ -229,73 +271,67 @@ export const parseEpubCover = (buffer: ArrayBuffer) =>
 
 			let coverHref: string | undefined;
 			let coverMimeType: string | undefined;
+			const itemTags = opfXml.match(/<item\b[^>]*>/gi) ?? [];
 
 			// EPUB 3: <item properties="cover-image" .../>
-			const epub3Match =
-				/<item\b[^>]*\bproperties="[^"]*cover-image[^"]*"[^>]*>/i.exec(opfXml);
-			if (epub3Match) {
-				const hrefMatch = /href="([^"]+)"/.exec(epub3Match[0]);
-				const typeMatch = /media-type="([^"]+)"/.exec(epub3Match[0]);
-				if (hrefMatch?.[1]) {
-					coverHref = hrefMatch[1];
-					coverMimeType = typeMatch?.[1];
-				}
+			const epub3Item = itemTags.find((tag) => {
+				const properties = getXmlAttr(tag, "properties");
+				return properties
+					? properties.split(/\s+/).includes("cover-image")
+					: false;
+			});
+			if (epub3Item) {
+				coverHref = getXmlAttr(epub3Item, "href");
+				coverMimeType = getXmlAttr(epub3Item, "media-type");
 			}
 
-			// EPUB 2/3: <item id="cover-image" .../>
+			// EPUB 2/3: <item id="cover-image|cover" .../>
 			if (!coverHref) {
-				const idMatch = /<item\b[^>]*\bid="cover-image"[^>]*/i.exec(opfXml);
-				if (idMatch) {
-					const hrefMatch = /href="([^"]+)"/.exec(idMatch[0]);
-					const typeMatch = /media-type="([^"]+)"/.exec(idMatch[0]);
-					if (hrefMatch?.[1]) {
-						coverHref = hrefMatch[1];
-						coverMimeType = typeMatch?.[1];
-					}
+				const idItem = itemTags.find((tag) => {
+					const id = getXmlAttr(tag, "id")?.toLowerCase();
+					return id === "cover-image" || id === "cover";
+				});
+				if (idItem) {
+					coverHref = getXmlAttr(idItem, "href");
+					coverMimeType = getXmlAttr(idItem, "media-type");
 				}
 			}
 
 			// EPUB 2 fallback: <meta name="cover" content="<item-id>"/>
 			if (!coverHref) {
-				const metaMatch =
-					/<meta\b[^>]*\bname="cover"\b[^>]*\bcontent="([^"]+)"[^>]*/i.exec(
-						opfXml,
-					) ??
-					/<meta\b[^>]*\bcontent="([^"]+)"[^>]*\bname="cover"[^>]*/i.exec(
-						opfXml,
+				const metaTags = opfXml.match(/<meta\b[^>]*>/gi) ?? [];
+				const coverMeta = metaTags.find(
+					(tag) => getXmlAttr(tag, "name")?.toLowerCase() === "cover",
+				);
+				const coverId = coverMeta
+					? getXmlAttr(coverMeta, "content")
+					: undefined;
+
+				if (coverId) {
+					const item = itemTags.find(
+						(tag) =>
+							getXmlAttr(tag, "id")?.toLowerCase() === coverId.toLowerCase(),
 					);
-				if (metaMatch?.[1]) {
-					const coverId = metaMatch[1];
-					const escapedId = coverId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-					const itemMatch = new RegExp(
-						`<item\\b[^>]*\\bid="${escapedId}"[^>]*>`,
-						"i",
-					).exec(opfXml);
-					if (itemMatch) {
-						const hrefMatch = /href="([^"]+)"/.exec(itemMatch[0]);
-						const typeMatch = /media-type="([^"]+)"/.exec(itemMatch[0]);
-						if (hrefMatch?.[1]) {
-							coverHref = hrefMatch[1];
-							coverMimeType = typeMatch?.[1];
-						}
+					if (item) {
+						coverHref = getXmlAttr(item, "href");
+						coverMimeType = getXmlAttr(item, "media-type");
 					}
 				}
 			}
 
 			if (!coverHref) return undefined;
 
-			const resolvedPath = opfDir + coverHref;
-			const data =
-				entries[resolvedPath] ?? entries[resolvedPath.replace(/^\.\//, "")];
+			const data = resolveEntryData(entries, opfDir, coverHref);
 			if (!data) return undefined;
 
+			const normalizedHref = coverHref.toLowerCase();
 			const mimeType =
 				coverMimeType ??
-				(coverHref.endsWith(".png")
+				(normalizedHref.endsWith(".png")
 					? "image/png"
-					: coverHref.endsWith(".gif")
+					: normalizedHref.endsWith(".gif")
 						? "image/gif"
-						: coverHref.endsWith(".webp")
+						: normalizedHref.endsWith(".webp")
 							? "image/webp"
 							: "image/jpeg");
 
