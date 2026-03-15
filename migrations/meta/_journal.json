@@ -43,6 +43,13 @@
       "when": 1773473048052,
       "tag": "0005_past_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1773555374503,
+      "tag": "0006_youthful_colonel_america",
+      "breakpoints": true
     }
   ]
 }

@@ -10,8 +10,9 @@ import {
 } from "#/hooks/useConversionTasks";
 import { useUploadQueue } from "#/hooks/useUploadQueue";
 import {
-	deleteTaskServerFn,
 	getUploadTasksServerFn,
+	markTaskAsReadServerFn,
+	markTasksAsReadServerFn,
 	type Task,
 } from "#/server/tasks";
 
@@ -59,6 +60,7 @@ export function useNotificationTasks(limit = 10) {
 			type: "upload" as const,
 			fileName: item.file.name,
 			status: "pending" as const,
+			readAt: null,
 			createdAt: item.submittedAt,
 			updatedAt: item.submittedAt,
 		})),
@@ -69,6 +71,7 @@ export function useNotificationTasks(limit = 10) {
 						type: "upload" as const,
 						fileName: uploadingItem.file.name,
 						status: "processing" as const,
+						readAt: null,
 						createdAt: uploadingItem.submittedAt,
 						updatedAt: Date.now(),
 					},
@@ -82,14 +85,16 @@ export function useNotificationTasks(limit = 10) {
 		...uploadTasks,
 		...conversionTasks,
 	].sort((a, b) => b.updatedAt - a.updatedAt);
+	const unreadTasks = mergedTasks.filter((task) => !task.readAt);
 
 	return {
-		data: mergedTasks,
+		data: unreadTasks,
+		allTasks: mergedTasks,
 		isLoading: uploadQuery.isLoading || isConversionLoading,
 	};
 }
 
-export function useDeleteNotificationTaskMutation() {
+export function useMarkNotificationTaskAsReadMutation() {
 	const queryClient = useQueryClient();
 	const { removeItem } = useUploadQueue();
 
@@ -105,8 +110,134 @@ export function useDeleteNotificationTaskMutation() {
 				removeItem(taskId);
 				return Promise.resolve({ success: true });
 			}
-			return deleteTaskServerFn({ data: { taskId, taskType } });
+			return markTaskAsReadServerFn({ data: { taskId, taskType } });
 		},
+		// onMutate: async ({ taskId }) => {
+		// 	await queryClient.cancelQueries({ queryKey: notificationQueryKeys.all });
+		// 	await queryClient.cancelQueries({ queryKey: conversionQueryKeys.all });
+
+		// 	const now = Date.now();
+		// 	queryClient.setQueriesData(
+		// 		{ queryKey: notificationQueryKeys.all },
+		// 		(old) => {
+		// 			if (!old) return old;
+		// 			if (!Array.isArray(old)) return old;
+		// 			return old.map((task) =>
+		// 				task &&
+		// 				typeof task === "object" &&
+		// 				"id" in task &&
+		// 				task.id === taskId
+		// 					? { ...task, readAt: now }
+		// 					: task,
+		// 			);
+		// 		},
+		// 	);
+
+		// 	queryClient.setQueriesData(
+		// 		{ queryKey: conversionQueryKeys.all },
+		// 		(old) => {
+		// 			if (!old) return old;
+		// 			if (!Array.isArray(old)) return old;
+		// 			return old.map((task) =>
+		// 				task &&
+		// 				typeof task === "object" &&
+		// 				"id" in task &&
+		// 				task.id === taskId
+		// 					? { ...task, readAt: now }
+		// 					: task,
+		// 			);
+		// 		},
+		// 	);
+		// },
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: notificationQueryKeys.all,
+			});
+			queryClient.invalidateQueries({
+				queryKey: conversionQueryKeys.all,
+			});
+		},
+	});
+}
+
+export function useMarkAllNotificationsAsReadMutation() {
+	const queryClient = useQueryClient();
+	const { data: tasks = [] } = useNotificationTasks(50);
+	const { removeItem } = useUploadQueue();
+
+	return useMutation({
+		mutationFn: async () => {
+			const completedTasks = tasks.filter(
+				(task) =>
+					(task.status === "success" || task.status === "failed") &&
+					!task.readAt,
+			);
+
+			const localTasks = completedTasks.filter((t) =>
+				t.id.startsWith("local-"),
+			);
+			const remoteTasks = completedTasks.filter(
+				(t) => !t.id.startsWith("local-"),
+			);
+
+			// remove completed local tasks
+			for (const task of localTasks) {
+				removeItem(task.id);
+			}
+
+			if (remoteTasks.length > 0) {
+				await markTasksAsReadServerFn({
+					data: {
+						taskIds: remoteTasks.map((t) => ({ id: t.id, type: t.type })),
+					},
+				});
+			}
+			return { success: true, taskIds: completedTasks.map((t) => t.id) };
+		},
+		// onMutate: async () => {
+		// 	await queryClient.cancelQueries({ queryKey: notificationQueryKeys.all });
+		// 	await queryClient.cancelQueries({ queryKey: conversionQueryKeys.all });
+
+		// 	const completedTasks = tasks.filter(
+		// 		(task) =>
+		// 			(task.status === "success" || task.status === "failed") &&
+		// 			!task.readAt,
+		// 	);
+		// 	const taskIds = new Set(completedTasks.map((t) => t.id));
+
+		// 	const now = Date.now();
+		// 	queryClient.setQueriesData(
+		// 		{ queryKey: notificationQueryKeys.all },
+		// 		(old) => {
+		// 			if (!old) return old;
+		// 			if (!Array.isArray(old)) return old;
+		// 			return old.map((task) =>
+		// 				task &&
+		// 				typeof task === "object" &&
+		// 				"id" in task &&
+		// 				taskIds.has(task.id as string)
+		// 					? { ...task, readAt: now }
+		// 					: task,
+		// 			);
+		// 		},
+		// 	);
+
+		// 	queryClient.setQueriesData(
+		// 		{ queryKey: conversionQueryKeys.all },
+		// 		(old) => {
+		// 			if (!old) return old;
+		// 			if (!Array.isArray(old)) return old;
+		// 			return old.map((task) =>
+		// 				task &&
+		// 				typeof task === "object" &&
+		// 				"id" in task &&
+		// 				taskIds.has(task.id as string)
+		// 					? { ...task, readAt: now }
+		// 					: task,
+		// 			);
+		// 		},
+		// 	);
+		// },
 		onSuccess: () => {
 			queryClient.invalidateQueries({
 				queryKey: notificationQueryKeys.all,

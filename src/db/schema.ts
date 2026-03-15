@@ -320,6 +320,8 @@ export const conversionJobs = sqliteTable(
 			onDelete: "set null",
 		}),
 		errorMessage: text("error_message"),
+		// for notification center
+		readAt: integer("read_at", { mode: "timestamp_ms" }),
 		createdAt: integer("created_at", { mode: "timestamp_ms" })
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.notNull(),
@@ -369,6 +371,7 @@ export const uploadTasks = sqliteTable(
 			onDelete: "set null",
 		}),
 		errorMessage: text("error_message"),
+		readAt: integer("read_at", { mode: "timestamp_ms" }),
 		createdAt: integer("created_at", { mode: "timestamp_ms" })
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.notNull(),

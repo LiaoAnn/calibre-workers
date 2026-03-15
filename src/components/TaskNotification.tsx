@@ -16,7 +16,8 @@ import {
 	PopoverTrigger,
 } from "#/components/ui/popover";
 import {
-	useDeleteNotificationTaskMutation,
+	useMarkAllNotificationsAsReadMutation,
+	useMarkNotificationTaskAsReadMutation,
 	useNotificationTasks,
 } from "#/hooks/useNotificationTasks";
 import type { Task, TaskStatus } from "#/server/tasks";
@@ -84,6 +85,7 @@ function TaskItem({
 					variant="ghost"
 					size="icon"
 					className="h-6 w-6 shrink-0 -mr-1"
+					title="標示已讀"
 					onClick={() => onRemove(task.id, task.type)}
 				>
 					<X className="h-3 w-3" />
@@ -95,7 +97,8 @@ function TaskItem({
 
 export function TaskNotification() {
 	const { data: tasks = [] } = useNotificationTasks();
-	const deleteMutation = useDeleteNotificationTaskMutation();
+	const markOneMutation = useMarkNotificationTaskAsReadMutation();
+	const markAllMutation = useMarkAllNotificationsAsReadMutation();
 
 	const activeTasks = tasks.filter(
 		(t) => t.status === "pending" || t.status === "processing",
@@ -109,13 +112,11 @@ export function TaskNotification() {
 	const hasTasks = tasks.length > 0;
 
 	const handleRemove = (taskId: string, taskType: Task["type"]) => {
-		deleteMutation.mutate({ taskId, taskType });
+		markOneMutation.mutate({ taskId, taskType });
 	};
 
 	const handleClearCompleted = () => {
-		completedTasks.forEach((t) => {
-			deleteMutation.mutate({ taskId: t.id, taskType: t.type });
-		});
+		markAllMutation.mutate();
 	};
 
 	return (
@@ -144,10 +145,10 @@ export function TaskNotification() {
 							size="sm"
 							className="h-7 text-xs"
 							onClick={handleClearCompleted}
-							disabled={deleteMutation.isPending}
+							disabled={markAllMutation.isPending}
 						>
 							<X className="h-3 w-3 mr-1" />
-							清除已完成
+							全部標示已讀
 						</Button>
 					)}
 				</div>
