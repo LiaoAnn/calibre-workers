@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+	createFileRoute,
+	Link,
+	notFound,
+	useNavigate,
+} from "@tanstack/react-router";
 import { useState } from "react";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
@@ -7,6 +12,7 @@ import { Combobox } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
+import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import {
 	searchAuthorsServerFn,
 	searchIdentifierTypesServerFn,
@@ -18,6 +24,13 @@ import {
 import { getBookByIdServerFn, updateBookServerFn } from "#/server/books";
 
 export const Route = createFileRoute("/books/$bookId_/edit")({
+	beforeLoad: async () => {
+		const session = await getSessionFromMiddlewareFn();
+
+		if (!session?.user) {
+			throw notFound();
+		}
+	},
 	loader: ({ params }) =>
 		getBookByIdServerFn({
 			data: { bookId: params.bookId },

@@ -4,20 +4,23 @@ import { useEffect, useRef } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { useConversionTasks } from "#/hooks/useConversionTasks";
+import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { getBookByIdServerFn } from "#/server/books";
 
 export const Route = createFileRoute("/books/$bookId")({
-	loader: ({ params }) =>
-		getBookByIdServerFn({
+	loader: async ({ params }) => ({
+		book: await getBookByIdServerFn({
 			data: {
 				bookId: params.bookId,
 			},
 		}),
+		session: await getSessionFromMiddlewareFn(),
+	}),
 	component: BookDetailPage,
 });
 
 function BookDetailPage() {
-	const book = Route.useLoaderData();
+	const { book, session } = Route.useLoaderData();
 	const router = useRouter();
 
 	const authors =
@@ -110,7 +113,7 @@ function BookDetailPage() {
 							</div>
 						) : null}
 
-						{canConvertToKepub ? (
+						{session?.user && canConvertToKepub ? (
 							<div className="mt-4 space-y-2">
 								<p className="text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)]">
 									格式轉換
@@ -151,17 +154,19 @@ function BookDetailPage() {
 							<h1 className="text-3xl font-bold leading-tight text-[var(--sea-ink)]">
 								{book.title}
 							</h1>
-							<Button
-								variant="outline"
-								size="sm"
-								asChild
-								className="justify-start gap-2"
-							>
-								<Link to="/books/$bookId/edit" params={{ bookId: book.id }}>
-									<Pencil />
-									編輯 Metadata
-								</Link>
-							</Button>
+							{session?.user ? (
+								<Button
+									variant="outline"
+									size="sm"
+									asChild
+									className="justify-start gap-2"
+								>
+									<Link to="/books/$bookId/edit" params={{ bookId: book.id }}>
+										<Pencil />
+										編輯 Metadata
+									</Link>
+								</Button>
+							) : null}
 						</div>
 
 						{authors.length > 0 ? (
