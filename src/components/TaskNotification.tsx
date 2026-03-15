@@ -35,14 +35,14 @@ function getStatusIcon(status: TaskStatus) {
 	}
 }
 
-function getStatusText(status: TaskStatus) {
+function getStatusText(status: TaskStatus, type?: Task["type"]) {
 	switch (status) {
 		case "pending":
 			return "等待中";
 		case "processing":
 			return "處理中";
 		case "success":
-			return "完成";
+			return type === "conversion" ? "轉換完成" : "上傳完成";
 		case "failed":
 			return "失敗";
 	}
@@ -64,8 +64,7 @@ function TaskItem({
 					<p className="text-sm font-medium truncate">{task.fileName}</p>
 				</div>
 				<p className="text-xs text-muted-foreground mt-0.5">
-					{getStatusText(task.status)}
-					{task.type === "conversion" && " (轉換)"}
+					{getStatusText(task.status, task.type)}
 				</p>
 				{task.errorMessage && (
 					<p className="text-xs text-red-500 mt-1">{task.errorMessage}</p>

@@ -10,6 +10,7 @@ import { r2Keys } from "#/lib/r2-keys";
 export interface ListBooksInput {
 	page?: number;
 	limit?: number;
+	author?: string;
 }
 
 export interface ListBooksResult {
@@ -37,23 +38,33 @@ export interface CreateBookFromUploadInput {
 	hasCover?: boolean;
 }
 
-export const listBooks = ({ page = 1, limit = 20 }: ListBooksInput = {}) =>
+export const listBooks = ({
+	page = 1,
+	limit = 20,
+	author,
+}: ListBooksInput = {}) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
 		const safePage = Math.max(1, page);
 		const safeLimit = Math.max(1, Math.min(100, limit));
 		const offset = (safePage - 1) * safeLimit;
+		const normalizedAuthor = author?.trim();
+		const whereClause = normalizedAuthor
+			? sql<boolean>`instr(',' || replace(coalesce(${schema.books.authors}, ''), ', ', ',') || ',', ',' || ${normalizedAuthor} || ',') > 0`
+			: undefined;
 
 		const items = yield* database
 			.select()
 			.from(schema.books)
+			.where(whereClause)
 			.orderBy(desc(schema.books.timestamp))
 			.limit(safeLimit)
 			.offset(offset);
 
 		const countRows = yield* database
 			.select({ count: sql<number>`count(*)` })
-			.from(schema.books);
+			.from(schema.books)
+			.where(whereClause);
 
 		return {
 			items,

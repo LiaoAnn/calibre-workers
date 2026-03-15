@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
+import { Route as AuthorNameRouteImport } from './routes/author.$name'
 import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
@@ -44,6 +45,11 @@ const BooksBookIdRoute = BooksBookIdRouteImport.update({
   path: '/books/$bookId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthorNameRoute = AuthorNameRouteImport.update({
+  id: '/author/$name',
+  path: '/author/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BooksBookIdEditRoute = BooksBookIdEditRouteImport.update({
   id: '/books/$bookId_/edit',
   path: '/books/$bookId/edit',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId_/edit': typeof BooksBookIdEditRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/login'
     | '/register'
+    | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
     | '/books/$bookId/edit'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/login'
     | '/register'
+    | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
     | '/books/$bookId/edit'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/login'
     | '/register'
+    | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
     | '/books/$bookId_/edit'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  AuthorNameRoute: typeof AuthorNameRoute
   BooksBookIdRoute: typeof BooksBookIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   BooksBookIdEditRoute: typeof BooksBookIdEditRoute
@@ -185,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BooksBookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/author/$name': {
+      id: '/author/$name'
+      path: '/author/$name'
+      fullPath: '/author/$name'
+      preLoaderRoute: typeof AuthorNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/books/$bookId_/edit': {
       id: '/books/$bookId_/edit'
       path: '/books/$bookId/edit'
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  AuthorNameRoute: AuthorNameRoute,
   BooksBookIdRoute: BooksBookIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   BooksBookIdEditRoute: BooksBookIdEditRoute,

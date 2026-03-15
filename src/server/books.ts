@@ -13,6 +13,7 @@ import {
 interface ListBooksServerInput {
 	page?: number;
 	limit?: number;
+	author?: string;
 }
 
 interface GetBookByIdServerInput {
@@ -26,6 +27,7 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 			listBooks({
 				page: data?.page,
 				limit: data?.limit,
+				author: data?.author,
 			}).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),

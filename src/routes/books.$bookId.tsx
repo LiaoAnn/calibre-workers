@@ -24,7 +24,7 @@ function BookDetailPage() {
 		book.authors
 			?.split(",")
 			.map((a) => a.trim())
-			.join("、") ?? "";
+			.filter(Boolean) ?? [];
 	const pubYear = book.pubdate ? new Date(book.pubdate).getFullYear() : null;
 	const description = book.comments[0]?.text;
 
@@ -164,9 +164,20 @@ function BookDetailPage() {
 							</Button>
 						</div>
 
-						{authors ? (
+						{authors.length > 0 ? (
 							<p className="mt-2 text-base text-[var(--sea-ink-soft)]">
-								{authors}
+								{authors.map((author, index) => (
+									<span key={`${book.id}-author-${author}`}>
+										{index > 0 ? ", " : null}
+										<Link
+											to="/author/$name"
+											params={{ name: author }}
+											className="hover:underline"
+										>
+											{author}
+										</Link>
+									</span>
+								))}
 							</p>
 						) : null}
 
