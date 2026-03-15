@@ -26,6 +26,38 @@ export const requiredSessionMiddleware = createMiddleware({
 		throw new Error("Unauthorized");
 	}
 
+	if (session.user.deletedAt) {
+		throw new Error("Account deleted");
+	}
+
+	if (session.user.status !== "active") {
+		throw new Error("Account pending approval");
+	}
+
+	return next({ context: { session } });
+});
+
+export const adminMiddleware = createMiddleware({
+	type: "function",
+}).server(async ({ next }) => {
+	const session = await readSessionFromRequest();
+
+	if (!session?.user) {
+		throw new Error("Unauthorized");
+	}
+
+	if (session.user.deletedAt) {
+		throw new Error("Account deleted");
+	}
+
+	if (session.user.status !== "active") {
+		throw new Error("Account pending approval");
+	}
+
+	if (session.user.role !== "admin") {
+		throw new Error("Forbidden");
+	}
+
 	return next({ context: { session } });
 });
 

@@ -21,6 +21,7 @@ interface GetBookByIdServerInput {
 }
 
 export const listBooksServerFn = createServerFn({ method: "GET" })
+	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: ListBooksServerInput | undefined) => input)
 	.handler(async ({ data }) => {
 		return Effect.runPromise(
@@ -38,6 +39,7 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 	});
 
 export const getBookByIdServerFn = createServerFn({ method: "GET" })
+	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: GetBookByIdServerInput) => input)
 	.handler(async ({ data }) => {
 		return Effect.runPromise(

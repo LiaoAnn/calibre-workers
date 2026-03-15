@@ -1,4 +1,9 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import {
+	createFileRoute,
+	Link,
+	redirect,
+	useRouter,
+} from "@tanstack/react-router";
 import { ArrowDownToLine, Loader2, Pencil, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Badge } from "#/components/ui/badge";
@@ -8,6 +13,17 @@ import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { getBookByIdServerFn } from "#/server/books";
 
 export const Route = createFileRoute("/books/$bookId")({
+	beforeLoad: async () => {
+		const session = await getSessionFromMiddlewareFn();
+
+		if (!session?.user || session.user.deletedAt) {
+			throw redirect({ to: "/login" });
+		}
+
+		if (session.user.status !== "active") {
+			throw redirect({ to: "/pending-approval" });
+		}
+	},
 	loader: async ({ params }) => ({
 		book: await getBookByIdServerFn({
 			data: {

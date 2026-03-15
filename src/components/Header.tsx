@@ -107,6 +107,11 @@ export default function Header() {
 										{user.email}
 									</DropdownMenuLabel>
 									<DropdownMenuSeparator />
+									{user.role === "admin" ? (
+										<DropdownMenuItem asChild className="cursor-pointer">
+											<Link to="/admin/users">使用者管理</Link>
+										</DropdownMenuItem>
+									) : null}
 									<DropdownMenuItem
 										onClick={handleLogout}
 										className="cursor-pointer gap-4"

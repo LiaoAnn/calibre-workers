@@ -17,8 +17,10 @@ export const Route = createFileRoute("/login")({
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 
-		if (session?.user) {
-			throw redirect({ to: "/" });
+		if (session?.user && !session.user.deletedAt) {
+			throw redirect({
+				to: session.user.status === "active" ? "/" : "/pending-approval",
+			});
 		}
 	},
 	component: LoginPage,
@@ -42,7 +44,13 @@ function LoginPage() {
 				throw new Error(result.error.message || "登入失敗，請稍後再試");
 			}
 
-			await navigate({ to: "/" });
+			const nextSession = await getSessionFromMiddlewareFn();
+			await navigate({
+				to:
+					nextSession?.user && nextSession.user.status !== "active"
+						? "/pending-approval"
+						: "/",
+			});
 		} catch (caughtError) {
 			setError(
 				caughtError instanceof Error

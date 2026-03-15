@@ -10,11 +10,13 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as PendingApprovalRouteImport } from './routes/pending-approval'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
 import { Route as AuthorNameRouteImport } from './routes/author.$name'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
@@ -23,6 +25,11 @@ import { Route as ApiBooksBookIdFilesFileIdRouteImport } from './routes/api/book
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PendingApprovalRoute = PendingApprovalRouteImport.update({
+  id: '/pending-approval',
+  path: '/pending-approval',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -48,6 +55,11 @@ const BooksBookIdRoute = BooksBookIdRouteImport.update({
 const AuthorNameRoute = AuthorNameRouteImport.update({
   id: '/author/$name',
   path: '/author/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BooksBookIdEditRoute = BooksBookIdEditRouteImport.update({
@@ -76,7 +88,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/pending-approval': typeof PendingApprovalRoute
   '/register': typeof RegisterRoute
+  '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -88,7 +102,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/pending-approval': typeof PendingApprovalRoute
   '/register': typeof RegisterRoute
+  '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -101,7 +117,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/login': typeof LoginRoute
+  '/pending-approval': typeof PendingApprovalRoute
   '/register': typeof RegisterRoute
+  '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -115,7 +133,9 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/login'
+    | '/pending-approval'
     | '/register'
+    | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
@@ -127,7 +147,9 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/login'
+    | '/pending-approval'
     | '/register'
+    | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
@@ -139,7 +161,9 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/login'
+    | '/pending-approval'
     | '/register'
+    | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
@@ -152,7 +176,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   LoginRoute: typeof LoginRoute
+  PendingApprovalRoute: typeof PendingApprovalRoute
   RegisterRoute: typeof RegisterRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   AuthorNameRoute: typeof AuthorNameRoute
   BooksBookIdRoute: typeof BooksBookIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -168,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pending-approval': {
+      id: '/pending-approval'
+      path: '/pending-approval'
+      fullPath: '/pending-approval'
+      preLoaderRoute: typeof PendingApprovalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -205,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthorNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/books/$bookId_/edit': {
       id: '/books/$bookId_/edit'
       path: '/books/$bookId/edit'
@@ -240,7 +280,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   LoginRoute: LoginRoute,
+  PendingApprovalRoute: PendingApprovalRoute,
   RegisterRoute: RegisterRoute,
+  AdminUsersRoute: AdminUsersRoute,
   AuthorNameRoute: AuthorNameRoute,
   BooksBookIdRoute: BooksBookIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

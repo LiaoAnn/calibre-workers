@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	Link,
-	notFound,
+	redirect,
 	useNavigate,
 } from "@tanstack/react-router";
 import { useState } from "react";
@@ -27,8 +27,12 @@ export const Route = createFileRoute("/books/$bookId_/edit")({
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 
-		if (!session?.user) {
-			throw notFound();
+		if (!session?.user || session.user.deletedAt) {
+			throw redirect({ to: "/login" });
+		}
+
+		if (session.user.status !== "active") {
+			throw redirect({ to: "/pending-approval" });
 		}
 	},
 	loader: ({ params }) =>

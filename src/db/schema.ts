@@ -12,6 +12,13 @@ export const user = sqliteTable("user", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
 	email: text("email").notNull().unique(),
+	role: text("role", { enum: ["admin", "user"] })
+		.default("user")
+		.notNull(),
+	status: text("status", { enum: ["pending", "active"] })
+		.default("pending")
+		.notNull(),
+	deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 	emailVerified: integer("email_verified", { mode: "boolean" })
 		.default(false)
 		.notNull(),
