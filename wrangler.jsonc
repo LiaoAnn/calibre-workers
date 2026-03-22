@@ -43,6 +43,13 @@
       }
     ]
   },
+  "workflows": [
+    {
+      "name": "sync-book-metadata",
+      "binding": "SYNC_BOOK_METADATA_WORKFLOW",
+      "class_name": "SyncBookMetadataWorkflow"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {

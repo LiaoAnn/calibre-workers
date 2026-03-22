@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
@@ -9,6 +10,7 @@ import {
 	type UpdateBookInput,
 	updateBook,
 } from "#/services/BookService";
+import type { SyncBookMetadataParams } from "#/workflows/types";
 
 interface ListBooksServerInput {
 	page?: number;
@@ -53,8 +55,8 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 export const updateBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: UpdateBookInput) => input)
-	.handler(async ({ data }) => {
-		return Effect.runPromise(
+	.handler(async ({ data, context }) => {
+		const result = await Effect.runPromise(
 			updateBook(data).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
@@ -62,4 +64,25 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 				Effect.provide(AppLayer),
 			),
 		);
+
+		const workflowBinding = env.SYNC_BOOK_METADATA_WORKFLOW;
+
+		const workflowParams: SyncBookMetadataParams = {
+			bookId: data.bookId,
+			triggeredByUserId: context.session.user.id,
+			reason: "book-metadata-updated",
+		};
+
+		const normalizedBookId = data.bookId
+			.toLowerCase()
+			.replace(/[^a-z0-9_-]/g, "-")
+			.slice(0, 48);
+		const workflowInstanceId = `book-metadata-${normalizedBookId}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+
+		await workflowBinding.create({
+			id: workflowInstanceId,
+			params: workflowParams,
+		});
+
+		return result;
 	});

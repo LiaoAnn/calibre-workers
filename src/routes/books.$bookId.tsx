@@ -8,6 +8,7 @@ import { ArrowDownToLine, Loader2, Pencil, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import type { BookFileFormat } from "#/db/schema";
 import { useConversionTasks } from "#/hooks/useConversionTasks";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { getBookByIdServerFn } from "#/server/books";
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/books/$bookId")({
 function BookDetailPage() {
 	const { book, session } = Route.useLoaderData();
 	const router = useRouter();
+	const conversionTargets = ["kepub", "azw3", "mobi"] as BookFileFormat[];
 
 	const authors =
 		book.authors
@@ -51,14 +53,13 @@ function BookDetailPage() {
 		book.files.map((f) => f.format.toLowerCase()),
 	);
 	const epubFiles = book.files.filter((f) => f.format.toLowerCase() === "epub");
-	const canConvertToKepub =
-		epubFiles.length > 0 && !existingFormats.has("kepub");
+	const canConvert = epubFiles.length > 0;
 
 	const { activeTasks: activeConversionTasks, triggerConversion } =
 		useConversionTasks({ bookId: book.id, limit: 200 });
 	const prevActiveCountRef = useRef(0);
 
-	const activeConversionBySourceFileId = new Map(
+	const activeConversionBySourceAndTarget = new Map(
 		activeConversionTasks
 			.filter(
 				(task) =>
@@ -66,14 +67,19 @@ function BookDetailPage() {
 					task.sourceFileId &&
 					(task.status === "pending" || task.status === "processing"),
 			)
-			.map((task) => [task.sourceFileId as string, task]),
+			.map((task) => {
+				const sourceFileId = task.sourceFileId as string;
+				const targetFormatMatch = task.fileName.match(/→\s*([A-Z0-9]+)$/);
+				const targetFormat = targetFormatMatch?.[1]?.toLowerCase() ?? "unknown";
+				return [`${sourceFileId}:${targetFormat}`, task] as const;
+			}),
 	);
 
-	async function handleConvertToKepub(fileId: string) {
+	async function handleConvert(fileId: string, targetFormat: string) {
 		await triggerConversion({
 			bookId: book.id,
 			fileId,
-			targetFormat: "kepub",
+			targetFormat,
 		});
 	}
 
@@ -129,36 +135,43 @@ function BookDetailPage() {
 							</div>
 						) : null}
 
-						{session?.user && canConvertToKepub ? (
+						{session?.user && canConvert ? (
 							<div className="mt-4 space-y-2">
 								<p className="text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)]">
 									格式轉換
 								</p>
 								{epubFiles.map((file) => {
-									const activeTask = activeConversionBySourceFileId.get(
-										file.id,
-									);
-									return activeTask ? (
-										<ConversionJobTracker
-											key={file.id}
-											status={
-												activeTask.status === "processing"
-													? "processing"
-													: "pending"
-											}
-										/>
-									) : (
-										<Button
-											key={file.id}
-											variant="outline"
-											size="sm"
-											className="w-full justify-start gap-2"
-											onClick={() => handleConvertToKepub(file.id)}
-										>
-											<RefreshCw size={14} />
-											轉換至 KEPUB
-										</Button>
-									);
+									return conversionTargets
+										.filter(
+											(targetFormat) => !existingFormats.has(targetFormat),
+										)
+										.map((targetFormat) => {
+											const activeTask = activeConversionBySourceAndTarget.get(
+												`${file.id}:${targetFormat}`,
+											);
+											return activeTask ? (
+												<ConversionJobTracker
+													key={`${file.id}:${targetFormat}`}
+													status={
+														activeTask.status === "processing"
+															? "processing"
+															: "pending"
+													}
+													label={`轉換至 ${targetFormat.toUpperCase()}`}
+												/>
+											) : (
+												<Button
+													key={`${file.id}:${targetFormat}`}
+													variant="outline"
+													size="sm"
+													className="w-full justify-start gap-2"
+													onClick={() => handleConvert(file.id, targetFormat)}
+												>
+													<RefreshCw size={14} />
+													轉換至 {targetFormat.toUpperCase()}
+												</Button>
+											);
+										});
 								})}
 							</div>
 						) : null}
@@ -296,10 +309,11 @@ function BookDetailPage() {
 
 interface ConversionJobTrackerProps {
 	status: "pending" | "processing";
+	label: string;
 }
 
-function ConversionJobTracker({ status }: ConversionJobTrackerProps) {
-	const label = status === "processing" ? "轉換中..." : "排隊中...";
+function ConversionJobTracker({ status, label }: ConversionJobTrackerProps) {
+	const statusLabel = status === "processing" ? "轉換中..." : "排隊中...";
 
 	return (
 		<Button
@@ -309,7 +323,7 @@ function ConversionJobTracker({ status }: ConversionJobTrackerProps) {
 			disabled
 		>
 			<Loader2 size={14} className="animate-spin" />
-			{label}
+			{label} ({statusLabel})
 		</Button>
 	);
 }

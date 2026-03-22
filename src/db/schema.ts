@@ -227,6 +227,9 @@ export const comments = sqliteTable("comments", {
 	text: text("text").notNull(),
 });
 
+// Keep known formats explicit for autocomplete while still allowing custom formats.
+export type BookFileFormat = "epub" | "kepub" | "azw3" | "mobi";
+
 export const bookFiles = sqliteTable(
 	"book_files",
 	{
@@ -234,7 +237,7 @@ export const bookFiles = sqliteTable(
 		bookId: text("book_id")
 			.notNull()
 			.references(() => books.id, { onDelete: "cascade" }),
-		format: text("format").notNull(),
+		format: text("format").$type<BookFileFormat>().notNull(),
 		fileName: text("file_name").notNull(),
 		r2Key: text("r2_key").notNull().unique(),
 		mimeType: text("mime_type"),

@@ -21,13 +21,10 @@ FROM debian:bookworm-slim
 
 # ca-certificates needed for any outbound TLS (future use)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates calibre \
   && rm -rf /var/lib/apt/lists/*
 
-# Future: install Calibre for mobi/azw3 conversion support
-# RUN wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin \
-#   && rm -rf /tmp/calibre-installer-cache
-# ENV QT_QPA_PLATFORM=offscreen
+ENV QT_QPA_PLATFORM=offscreen
 
 COPY --from=builder /app/converter /usr/local/bin/converter
 
