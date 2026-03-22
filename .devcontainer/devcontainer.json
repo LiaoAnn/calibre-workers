@@ -8,6 +8,9 @@
     "ghcr.io/devcontainers-extra/features/cloudflare-wrangler:1": {
       "version": "latest"
     },
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "latest"
+    },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "version": "latest",
       "moby": false
@@ -26,7 +29,8 @@
         "oderwat.indent-rainbow",
         "bradlc.vscode-tailwindcss",
         "wayou.vscode-todo-highlight",
-        "biomejs.biome"
+        "biomejs.biome",
+        "golang.Go"
       ],
       "settings": {
         "editor.bracketPairColorization.enabled": true,
@@ -53,7 +57,12 @@
     8787
   ],
   // Fix pnpm store permissions after volume mount (Docker named volume may be root-owned) and then pin pnpm store path.
-  "postCreateCommand": "sudo mkdir -p /home/node/.pnpm-store && sudo chown -R node:node /home/node/.pnpm-store && pnpm config set store-dir /home/node/.pnpm-store",
+  "postCreateCommand": "sudo mkdir -p /home/node/.pnpm-store /home/node/go/pkg/mod /home/node/.cache/go-build && sudo chown -R node:node /home/node/.pnpm-store /home/node/go /home/node/.cache/go-build && pnpm config set store-dir /home/node/.pnpm-store",
+  "remoteEnv": {
+    "GOPATH": "/home/node/go",
+    "GOMODCACHE": "/home/node/go/pkg/mod",
+    "GOCACHE": "/home/node/.cache/go-build"
+  },
   // Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
   "remoteUser": "node"
 }
