@@ -2,7 +2,7 @@ import "@tanstack/react-start/server-only";
 
 import { eq } from "drizzle-orm";
 import { Data, Effect } from "effect";
-import type { ConversionJobStatus } from "#/db/schema";
+import type { BookFileFormat, ConversionJobStatus } from "#/db/schema";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 
@@ -75,7 +75,7 @@ export const updateConversionJobStatus = (
 
 interface CreateBookFileInput {
 	bookId: string;
-	format: string;
+	format: BookFileFormat;
 	fileName: string;
 	r2Key: string;
 	size: number;

@@ -1,9 +1,11 @@
 import "@tanstack/react-start/server-only";
 
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
+import type { BookFileFormat } from "#/db/schema";
 import { AppLayerWithContainer } from "#/layers/AppLayer";
 import { ConverterContainerContext } from "#/layers/ConverterContainerLayer";
 import { r2Keys } from "#/lib/r2-keys";
+import { getBookMetadataForProcess } from "#/services/BookService";
 import {
 	createBookFile,
 	getConversionJob,
@@ -14,6 +16,18 @@ import {
 	getBookFileRecord,
 	uploadBookFile,
 } from "#/services/FileService";
+
+export interface ConversionQueueMessage {
+	jobId: string;
+}
+
+const CONVERSION_MAX_ATTEMPTS = 3;
+
+const isBookFileFormat = (format: string): format is BookFileFormat =>
+	format === "epub" ||
+	format === "kepub" ||
+	format === "azw3" ||
+	format === "mobi";
 
 function mimeTypeForFormat(format: string) {
 	switch (format.toLowerCase()) {
@@ -26,6 +40,8 @@ function mimeTypeForFormat(format: string) {
 			return "application/vnd.amazon.mobi8-ebook";
 		case "pdf":
 			return "application/pdf";
+		case "txt":
+			return "text/plain; charset=utf-8";
 		default:
 			return "application/octet-stream";
 	}
@@ -33,13 +49,19 @@ function mimeTypeForFormat(format: string) {
 
 export const handleConversionQueue: ExportedHandlerQueueHandler<
 	Env,
-	{ jobId: string }
+	ConversionQueueMessage
 > = async (batch, _env) => {
 	for (const message of batch.messages) {
 		const { jobId } = message.body;
 
 		const runnable = Effect.gen(function* () {
 			const job = yield* getConversionJob(jobId);
+
+			if (!isBookFileFormat(job.targetFormat)) {
+				return yield* Effect.fail(
+					new Error(`Unsupported target format: ${job.targetFormat}`),
+				);
+			}
 
 			yield* updateConversionJobStatus(jobId, { status: "processing" });
 
@@ -52,11 +74,19 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 			});
 
 			const container = yield* ConverterContainerContext;
-			const converted = yield* container.convert(
+			const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
+
+			const convertedBytes = yield* container.convert(
 				bytes,
 				fileRecord.format,
 				job.targetFormat,
 			);
+
+			const processed = yield* container.process(convertedBytes, {
+				formatFrom: job.targetFormat,
+				formatTo: job.targetFormat,
+				metadata: latestMetadata,
+			});
 
 			const baseName = fileRecord.fileName.replace(/\.[^.]+$/, "");
 			const resultFileName = `${baseName}.${job.targetFormat}`;
@@ -67,8 +97,9 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 
 			yield* uploadBookFile({
 				r2Key: resultR2Key,
-				body: converted,
-				contentType: mimeTypeForFormat(job.targetFormat),
+				body: processed.bytes,
+				contentType:
+					processed.contentType || mimeTypeForFormat(job.targetFormat),
 			});
 
 			const { fileId: resultFileId } = yield* createBookFile({
@@ -76,8 +107,8 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 				format: job.targetFormat,
 				fileName: resultFileName,
 				r2Key: resultR2Key,
-				size: converted.byteLength,
-				mimeType: mimeTypeForFormat(job.targetFormat),
+				size: processed.bytes.byteLength,
+				mimeType: processed.contentType || mimeTypeForFormat(job.targetFormat),
 			});
 
 			yield* updateConversionJobStatus(jobId, {
@@ -86,18 +117,33 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 			});
 		});
 
+		const result = await Effect.runPromise(
+			Effect.either(runnable.pipe(Effect.provide(AppLayerWithContainer))),
+		);
+
+		if (Either.isRight(result)) {
+			message.ack();
+			continue;
+		}
+
+		const finalAttempt = message.attempts >= CONVERSION_MAX_ATTEMPTS;
+		const failedStatus = finalAttempt ? "failed" : "pending";
+
 		await Effect.runPromise(
-			runnable.pipe(
-				Effect.catchAll((error) =>
-					updateConversionJobStatus(jobId, {
-						status: "failed",
-						errorMessage: String(error),
-					}).pipe(Effect.catchAll(() => Effect.void)),
-				),
+			updateConversionJobStatus(jobId, {
+				status: failedStatus,
+				errorMessage: String(result.left),
+			}).pipe(
+				Effect.catchAll(() => Effect.void),
 				Effect.provide(AppLayerWithContainer),
 			),
 		);
 
-		message.ack();
+		if (finalAttempt) {
+			message.ack();
+			continue;
+		}
+
+		message.retry();
 	}
 };

@@ -7,6 +7,32 @@ import { DatabaseContext } from "#/layers/DatabaseLayer";
 import { BookNotFound } from "#/lib/errors";
 import { r2Keys } from "#/lib/r2-keys";
 
+interface BookMetadataForProcess {
+	title: string;
+	authors: string[];
+	language?: string;
+	publisher?: string;
+}
+
+interface MetadataSyncFile {
+	fileId: string;
+	bookId: string;
+	r2Key: string;
+	format: string;
+}
+
+const toBookFileFormat = (value?: string): schema.BookFileFormat => {
+	switch ((value ?? "").toLowerCase()) {
+		case "epub":
+		case "kepub":
+		case "azw3":
+		case "mobi":
+			return value as schema.BookFileFormat;
+		default:
+			return "epub";
+	}
+};
+
 export interface ListBooksInput {
 	page?: number;
 	limit?: number;
@@ -142,6 +168,59 @@ export const getBookById = (bookId: string) =>
 		};
 	});
 
+export const getBookMetadataForProcess = (bookId: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+
+		const rows = yield* database
+			.select({
+				id: schema.books.id,
+				title: schema.books.title,
+				authors: schema.books.authors,
+				language: schema.books.language,
+				publisher: schema.publishers.name,
+			})
+			.from(schema.books)
+			.leftJoin(
+				schema.publishers,
+				eq(schema.publishers.id, schema.books.publisherId),
+			)
+			.where(eq(schema.books.id, bookId))
+			.limit(1);
+
+		const row = rows[0];
+		if (!row) {
+			return yield* Effect.fail(new BookNotFound({ bookId }));
+		}
+
+		return {
+			title: row.title,
+			authors: (row.authors ?? "")
+				.split(",")
+				.map((value) => value.trim())
+				.filter(Boolean),
+			language: row.language ?? undefined,
+			publisher: row.publisher ?? undefined,
+		} satisfies BookMetadataForProcess;
+	});
+
+export const listBookFilesForMetadataSync = (bookId: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+
+		const files = yield* database
+			.select({
+				fileId: schema.bookFiles.id,
+				bookId: schema.bookFiles.bookId,
+				r2Key: schema.bookFiles.r2Key,
+				format: schema.bookFiles.format,
+			})
+			.from(schema.bookFiles)
+			.where(eq(schema.bookFiles.bookId, bookId));
+
+		return files satisfies MetadataSyncFile[];
+	});
+
 // ---------------------------------------------------------------------------
 // Find-or-create helpers (each requires DatabaseContext)
 // ---------------------------------------------------------------------------
@@ -195,7 +274,7 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 		const bookId = crypto.randomUUID();
 		const fileId = crypto.randomUUID();
 		const uuid = crypto.randomUUID();
-		const format = input.fileName.split(".").pop()?.toLowerCase() || "epub";
+		const format = toBookFileFormat(input.fileName.split(".").pop());
 		const r2Key = r2Keys.bookFile({ bookId, fileName: input.fileName });
 		const authorsStr = input.authors.join(", ") || "Unknown";
 

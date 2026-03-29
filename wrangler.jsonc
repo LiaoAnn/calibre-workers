@@ -32,6 +32,10 @@
       {
         "queue": "calibre-conversion",
         "binding": "CONVERSION_QUEUE"
+      },
+      {
+        "queue": "calibre-metadata",
+        "binding": "METADATA_QUEUE"
       }
     ],
     "consumers": [
@@ -40,16 +44,15 @@
         "max_batch_size": 5,
         "max_batch_timeout": 30,
         "max_retries": 2
+      },
+      {
+        "queue": "calibre-metadata",
+        "max_batch_size": 5,
+        "max_batch_timeout": 30,
+        "max_retries": 2
       }
     ]
   },
-  "workflows": [
-    {
-      "name": "sync-book-metadata",
-      "binding": "SYNC_BOOK_METADATA_WORKFLOW",
-      "class_name": "SyncBookMetadataWorkflow"
-    }
-  ],
   "durable_objects": {
     "bindings": [
       {

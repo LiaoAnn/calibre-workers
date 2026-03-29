@@ -4,13 +4,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import { AppLayer } from "#/layers/AppLayer";
 import { requiredSessionMiddleware } from "#/middleware/auth";
+import type { MetadataQueueMessage } from "#/queue";
 import {
 	getBookById,
+	listBookFilesForMetadataSync,
 	listBooks,
 	type UpdateBookInput,
 	updateBook,
 } from "#/services/BookService";
-import type { SyncBookMetadataParams } from "#/workflows/types";
 
 interface ListBooksServerInput {
 	page?: number;
@@ -55,9 +56,12 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 export const updateBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: UpdateBookInput) => input)
-	.handler(async ({ data, context }) => {
-		const result = await Effect.runPromise(
-			updateBook(data).pipe(
+	.handler(async ({ data }) => {
+		const files = await Effect.runPromise(
+			Effect.gen(function* () {
+				yield* updateBook(data);
+				return yield* listBookFilesForMetadataSync(data.bookId);
+			}).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
@@ -65,24 +69,18 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 			),
 		);
 
-		const workflowBinding = env.SYNC_BOOK_METADATA_WORKFLOW;
+		if (files.length > 0) {
+			const messages = files.map((file) => ({
+				body: {
+					bookId: file.bookId,
+					fileId: file.fileId,
+					r2Key: file.r2Key,
+					format: file.format,
+				} satisfies MetadataQueueMessage,
+			}));
 
-		const workflowParams: SyncBookMetadataParams = {
-			bookId: data.bookId,
-			triggeredByUserId: context.session.user.id,
-			reason: "book-metadata-updated",
-		};
+			await env.METADATA_QUEUE.sendBatch(messages);
+		}
 
-		const normalizedBookId = data.bookId
-			.toLowerCase()
-			.replace(/[^a-z0-9_-]/g, "-")
-			.slice(0, 48);
-		const workflowInstanceId = `book-metadata-${normalizedBookId}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
-
-		await workflowBinding.create({
-			id: workflowInstanceId,
-			params: workflowParams,
-		});
-
-		return result;
+		return { queuedFileCount: files.length };
 	});
