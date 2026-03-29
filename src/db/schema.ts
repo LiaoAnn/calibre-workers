@@ -229,6 +229,7 @@ export const comments = sqliteTable("comments", {
 
 // Keep known formats explicit for autocomplete while still allowing custom formats.
 export type BookFileFormat = "epub" | "kepub" | "azw3" | "mobi";
+export type MetadataSyncStatus = "ready" | "pending" | "processing" | "failed";
 
 export const bookFiles = sqliteTable(
 	"book_files",
@@ -238,6 +239,10 @@ export const bookFiles = sqliteTable(
 			.notNull()
 			.references(() => books.id, { onDelete: "cascade" }),
 		format: text("format").$type<BookFileFormat>().notNull(),
+		metadataStatus: text("metadata_status")
+			.$type<MetadataSyncStatus>()
+			.notNull()
+			.default("ready"),
 		fileName: text("file_name").notNull(),
 		r2Key: text("r2_key").notNull().unique(),
 		mimeType: text("mime_type"),
@@ -249,6 +254,7 @@ export const bookFiles = sqliteTable(
 	(table) => [
 		index("book_files_book_idx").on(table.bookId),
 		index("book_files_format_idx").on(table.format),
+		index("book_files_metadata_status_idx").on(table.metadataStatus),
 	],
 );
 

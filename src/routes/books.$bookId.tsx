@@ -8,10 +8,13 @@ import { ArrowDownToLine, Loader2, Pencil, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import type { BookFileFormat } from "#/db/schema";
+import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
 import { useConversionTasks } from "#/hooks/useConversionTasks";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { getBookByIdServerFn } from "#/server/books";
+
+const isMetadataSyncing = (status: MetadataSyncStatus) =>
+	status === "pending" || status === "processing";
 
 export const Route = createFileRoute("/books/$bookId")({
 	beforeLoad: async () => {
@@ -54,6 +57,9 @@ function BookDetailPage() {
 	);
 	const epubFiles = book.files.filter((f) => f.format.toLowerCase() === "epub");
 	const canConvert = epubFiles.length > 0;
+	const hasActiveMetadataSync = book.files.some((file) =>
+		isMetadataSyncing(file.metadataStatus),
+	);
 
 	const { activeTasks: activeConversionTasks, triggerConversion } =
 		useConversionTasks({ bookId: book.id, limit: 200 });
@@ -97,6 +103,18 @@ function BookDetailPage() {
 		prevActiveCountRef.current = currentActiveCount;
 	}, [activeConversionTasks, book.id, router]);
 
+	useEffect(() => {
+		if (!hasActiveMetadataSync) {
+			return;
+		}
+
+		const timer = setInterval(() => {
+			router.invalidate();
+		}, 3000);
+
+		return () => clearInterval(timer);
+	}, [hasActiveMetadataSync, router]);
+
 	return (
 		<main className="page-wrap px-4 py-12">
 			<div className="mx-auto w-full max-w-4xl">
@@ -118,20 +136,39 @@ function BookDetailPage() {
 								<p className="text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)]">
 									下載
 								</p>
-								{book.files.map((file) => (
-									<Button
-										key={file.id}
-										variant="outline"
-										size="sm"
-										asChild
-										className="w-full justify-start gap-2"
-									>
-										<a href={`/api/books/${book.id}/files/${file.id}`}>
-											<ArrowDownToLine />
-											{file.format.toUpperCase()}
-										</a>
-									</Button>
-								))}
+								{hasActiveMetadataSync ? (
+									<p className="text-xs text-[var(--sea-ink-soft)]">
+										Metadata 同步中，下載暫時鎖定
+									</p>
+								) : null}
+								{book.files.map((file) =>
+									isMetadataSyncing(file.metadataStatus) ? (
+										<Button
+											key={file.id}
+											variant="outline"
+											size="sm"
+											className="w-full justify-start gap-2 opacity-70"
+											disabled
+										>
+											<Loader2 size={14} className="animate-spin" />
+											{file.format.toUpperCase()} (同步中...)
+										</Button>
+									) : (
+										<Button
+											key={file.id}
+											variant="outline"
+											size="sm"
+											asChild
+											className="w-full justify-start gap-2"
+										>
+											<a href={`/api/books/${book.id}/files/${file.id}`}>
+												<ArrowDownToLine />
+												{file.format.toUpperCase()}
+												{file.metadataStatus === "failed" ? " (同步失敗)" : ""}
+											</a>
+										</Button>
+									),
+								)}
 							</div>
 						) : null}
 

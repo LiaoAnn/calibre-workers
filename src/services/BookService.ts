@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
@@ -18,7 +18,7 @@ interface MetadataSyncFile {
 	fileId: string;
 	bookId: string;
 	r2Key: string;
-	format: string;
+	format: schema.BookFileFormat;
 }
 
 const toBookFileFormat = (value?: string): schema.BookFileFormat => {
@@ -219,6 +219,65 @@ export const listBookFilesForMetadataSync = (bookId: string) =>
 			.where(eq(schema.bookFiles.bookId, bookId));
 
 		return files satisfies MetadataSyncFile[];
+	});
+
+export const setBookFilesMetadataStatus = ({
+	bookId,
+	fileIds,
+	status,
+}: {
+	bookId: string;
+	fileIds?: string[];
+	status: schema.MetadataSyncStatus;
+}) =>
+	Effect.gen(function* () {
+		if (fileIds && fileIds.length === 0) {
+			return;
+		}
+
+		const database = yield* DatabaseContext;
+		const whereClause = fileIds
+			? and(
+					eq(schema.bookFiles.bookId, bookId),
+					inArray(schema.bookFiles.id, fileIds),
+				)
+			: eq(schema.bookFiles.bookId, bookId);
+
+		yield* database
+			.update(schema.bookFiles)
+			.set({ metadataStatus: status })
+			.where(whereClause);
+	});
+
+export const setBookFileMetadataStatus = ({
+	bookId,
+	fileId,
+	status,
+	onlyIfCurrentStatusIn,
+}: {
+	bookId: string;
+	fileId: string;
+	status: schema.MetadataSyncStatus;
+	onlyIfCurrentStatusIn?: schema.MetadataSyncStatus[];
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const baseWhere = and(
+			eq(schema.bookFiles.bookId, bookId),
+			eq(schema.bookFiles.id, fileId),
+		);
+		const whereClause =
+			onlyIfCurrentStatusIn && onlyIfCurrentStatusIn.length > 0
+				? and(
+						baseWhere,
+						inArray(schema.bookFiles.metadataStatus, onlyIfCurrentStatusIn),
+					)
+				: baseWhere;
+
+		yield* database
+			.update(schema.bookFiles)
+			.set({ metadataStatus: status })
+			.where(whereClause);
 	});
 
 // ---------------------------------------------------------------------------

@@ -1,16 +1,20 @@
 import "@tanstack/react-start/server-only";
 
 import { Effect, Either } from "effect";
+import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
 import { AppLayerWithContainer } from "#/layers/AppLayer";
 import { ConverterContainerContext } from "#/layers/ConverterContainerLayer";
-import { getBookMetadataForProcess } from "#/services/BookService";
+import {
+	getBookMetadataForProcess,
+	setBookFileMetadataStatus,
+} from "#/services/BookService";
 import { getBookFile, uploadBookFile } from "#/services/FileService";
 
 export interface MetadataQueueMessage {
 	bookId: string;
 	fileId: string;
 	r2Key: string;
-	format: string;
+	format: BookFileFormat;
 }
 
 const METADATA_MAX_ATTEMPTS = 3;
@@ -41,6 +45,12 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 		const { bookId, fileId, r2Key, format } = message.body;
 
 		const runnable = Effect.gen(function* () {
+			yield* setBookFileMetadataStatus({
+				bookId,
+				fileId,
+				status: "processing",
+			});
+
 			const latestMetadata = yield* getBookMetadataForProcess(bookId);
 			const source = yield* getBookFile(r2Key);
 
@@ -64,6 +74,13 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 				body: processed.bytes,
 				contentType: processed.contentType || mimeTypeForFormat(format),
 			});
+
+			yield* setBookFileMetadataStatus({
+				bookId,
+				fileId,
+				status: "ready",
+				onlyIfCurrentStatusIn: ["processing"],
+			});
 		});
 
 		const result = await Effect.runPromise(
@@ -76,10 +93,31 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 		}
 
 		const finalAttempt = message.attempts >= METADATA_MAX_ATTEMPTS;
+		const fallbackStatus: MetadataSyncStatus = finalAttempt
+			? "failed"
+			: "pending";
 		console.error(
 			`Metadata queue failed for file ${fileId} (attempt ${message.attempts})`,
 			result.left,
 		);
+
+		const statusResult = await Effect.runPromise(
+			Effect.either(
+				setBookFileMetadataStatus({
+					bookId,
+					fileId,
+					status: fallbackStatus,
+					onlyIfCurrentStatusIn: ["processing"],
+				}).pipe(Effect.provide(AppLayerWithContainer)),
+			),
+		);
+
+		if (Either.isLeft(statusResult)) {
+			console.error(
+				`Failed to set metadata status ${fallbackStatus} for ${fileId}`,
+				statusResult.left,
+			);
+		}
 
 		if (finalAttempt) {
 			message.ack();

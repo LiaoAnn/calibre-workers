@@ -23,8 +23,19 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 						params.bookId,
 						params.fileId,
 					);
+
+					if (
+						fileRecord.metadataStatus === "pending" ||
+						fileRecord.metadataStatus === "processing"
+					) {
+						return {
+							locked: true,
+							fileRecord,
+						};
+					}
+
 					const object = yield* getBookFile(fileRecord.r2Key);
-					return { fileRecord, object } as const;
+					return { locked: false, fileRecord, object };
 				});
 
 				const result = await Effect.runPromise(
@@ -33,6 +44,12 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 
 				if (!result) {
 					return new Response("File not found", { status: 404 });
+				}
+
+				if (result.locked) {
+					return new Response("File metadata is being synchronized", {
+						status: 423,
+					});
 				}
 
 				const headers = new Headers();

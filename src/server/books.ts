@@ -9,6 +9,7 @@ import {
 	getBookById,
 	listBookFilesForMetadataSync,
 	listBooks,
+	setBookFilesMetadataStatus,
 	type UpdateBookInput,
 	updateBook,
 } from "#/services/BookService";
@@ -60,7 +61,17 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 		const files = await Effect.runPromise(
 			Effect.gen(function* () {
 				yield* updateBook(data);
-				return yield* listBookFilesForMetadataSync(data.bookId);
+				const files = yield* listBookFilesForMetadataSync(data.bookId);
+
+				if (files.length > 0) {
+					yield* setBookFilesMetadataStatus({
+						bookId: data.bookId,
+						fileIds: files.map((file) => file.fileId),
+						status: "pending",
+					});
+				}
+
+				return files;
 			}).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
@@ -79,7 +90,18 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 				} satisfies MetadataQueueMessage,
 			}));
 
-			await env.METADATA_QUEUE.sendBatch(messages);
+			try {
+				await env.METADATA_QUEUE.sendBatch(messages);
+			} catch (error) {
+				await Effect.runPromise(
+					setBookFilesMetadataStatus({
+						bookId: data.bookId,
+						fileIds: files.map((file) => file.fileId),
+						status: "failed",
+					}).pipe(Effect.provide(AppLayer)),
+				);
+				throw error;
+			}
 		}
 
 		return { queuedFileCount: files.length };
