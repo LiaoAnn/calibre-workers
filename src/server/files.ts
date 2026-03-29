@@ -16,6 +16,10 @@ class UploadError extends Data.TaggedError("UploadError")<{
 	readonly cause?: unknown;
 }> {}
 
+const isSupportedUploadFile = (file: File) =>
+	file.name.toLowerCase().endsWith(".epub") ||
+	file.type.toLowerCase().includes("epub");
+
 export const uploadBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: FormData) => input)
@@ -28,14 +32,19 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 			throw new Error("Missing file");
 		}
 
+		if (!isSupportedUploadFile(file)) {
+			throw new UploadError({
+				message: "Unsupported file format. Only .epub is allowed.",
+			});
+		}
+
 		// Create upload task record
 		const taskId = crypto.randomUUID();
 		const userId = context.session.user.id;
 
 		// Use streaming instead of buffering entire file
 		const fileStream = file.stream();
-		const isEpub =
-			file.name.toLowerCase().endsWith(".epub") || file.type.includes("epub");
+		const isEpub = isSupportedUploadFile(file);
 
 		const runnable = Effect.gen(function* () {
 			const database = yield* DatabaseContext;

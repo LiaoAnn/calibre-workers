@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpFromLine, LogOut } from "lucide-react";
 import { useRef } from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "#/components/ui/avatar";
 import { Button } from "#/components/ui/button";
 import {
@@ -15,6 +16,10 @@ import { useUploadQueue } from "#/hooks/useUploadQueue";
 import { authClient, useSession } from "#/lib/auth-client";
 import { TaskNotification } from "./TaskNotification";
 import ThemeToggle from "./ThemeToggle";
+
+const isSupportedUploadFile = (file: File) =>
+	file.name.toLowerCase().endsWith(".epub") ||
+	file.type.toLowerCase().includes("epub");
 
 export default function Header() {
 	const { data: session } = useSession();
@@ -33,7 +38,20 @@ export default function Header() {
 		if (!files || files.length === 0) return;
 
 		const fileArray = Array.from(files);
-		addFilesToQueue(fileArray);
+		const validFiles = fileArray.filter(isSupportedUploadFile);
+		const invalidFiles = fileArray.filter(
+			(file) => !isSupportedUploadFile(file),
+		);
+
+		if (invalidFiles.length > 0) {
+			toast.error(
+				`僅支援 EPUB 檔案，已忽略 ${invalidFiles.length} 個不符合格式的檔案。`,
+			);
+		}
+
+		if (validFiles.length > 0) {
+			addFilesToQueue(validFiles);
+		}
 
 		// Reset input so same files can be selected again
 		if (fileInputRef.current) fileInputRef.current.value = "";
