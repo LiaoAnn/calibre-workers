@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +21,24 @@ const (
 	maxUploadSize      int64         = 256 << 20 // 256MB
 	multipartMemoryMax int64         = 32 << 20  // 32MB kept in memory; rest spills to disk
 	requestTimeout     time.Duration = 8 * time.Minute
+
+	formFieldFile       = "file"
+	formFieldFormatFrom = "format_from"
+	formFieldFormatTo   = "format_to"
+	formFieldMetadata   = "metadata"
+
+	formatEPUB  = "epub"
+	formatKEPUB = "kepub"
+	formatAZW3  = "azw3"
+	formatMOBI  = "mobi"
 )
+
+var supportedFormats = map[string]struct{}{
+	formatEPUB:  {},
+	formatKEPUB: {},
+	formatAZW3:  {},
+	formatMOBI:  {},
+}
 
 type metadataPayload struct {
 	Title     string   `json:"title"`
@@ -41,6 +57,19 @@ type requestPayload struct {
 
 type errorResponse struct {
 	Error string `json:"error"`
+}
+
+type responseWriteError struct {
+	cause           error
+	responseStarted bool
+}
+
+func (e *responseWriteError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *responseWriteError) Unwrap() error {
+	return e.cause
 }
 
 func main() {
@@ -99,7 +128,7 @@ func handleProcess(w http.ResponseWriter, r *http.Request) {
 
 	if shouldApplyMetadata(payload.metadata) {
 		if err := applyMetadataWithCalibre(ctx, payload.inputPath, payload.metadata); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			if isContextTimeout(err) {
 				writeError(w, http.StatusGatewayTimeout, "metadata processing timed out", err)
 				return
 			}
@@ -109,7 +138,7 @@ func handleProcess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := writeFileResponseFromPath(ctx, w, payload.formatFrom, payload.inputPath); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to write response", err)
+		writeErrorIfPossible(w, http.StatusInternalServerError, "failed to write response", err)
 	}
 }
 
@@ -145,27 +174,27 @@ func handleConvert(w http.ResponseWriter, r *http.Request) {
 	switch formatTo {
 	case formatFrom:
 		if err := writeFileResponseFromPath(ctx, w, formatFrom, payload.inputPath); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to write response", err)
+			writeErrorIfPossible(w, http.StatusInternalServerError, "failed to write response", err)
 		}
-	case "kepub":
-		if formatFrom != "epub" {
+	case formatKEPUB:
+		if formatFrom != formatEPUB {
 			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("kepub conversion requires epub source, got %q", formatFrom), nil)
 			return
 		}
 		if err := convertToKepub(ctx, w, payload.inputPath); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				writeError(w, http.StatusGatewayTimeout, "conversion timed out", err)
+			if isContextTimeout(err) {
+				writeErrorIfPossible(w, http.StatusGatewayTimeout, "conversion timed out", err)
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "kepub conversion failed", err)
+			writeErrorIfPossible(w, http.StatusInternalServerError, "kepub conversion failed", err)
 		}
-	case "azw3", "mobi", "txt":
+	case formatAZW3, formatMOBI:
 		if err := convertWithCalibre(ctx, w, payload.inputPath, formatFrom, formatTo); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				writeError(w, http.StatusGatewayTimeout, "conversion timed out", err)
+			if isContextTimeout(err) {
+				writeErrorIfPossible(w, http.StatusGatewayTimeout, "conversion timed out", err)
 				return
 			}
-			writeError(w, http.StatusUnprocessableEntity, "ebook conversion failed", err)
+			writeErrorIfPossible(w, http.StatusUnprocessableEntity, "ebook conversion failed", err)
 		}
 
 	// Future formats via ebook-convert (requires Calibre in Dockerfile):
@@ -178,15 +207,31 @@ func handleConvert(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseRequestPayload(r *http.Request) (requestPayload, error) {
+	cleanupFns := make([]func(), 0, 2)
+	cleanup := func() {
+		for i := len(cleanupFns) - 1; i >= 0; i-- {
+			cleanupFns[i]()
+		}
+	}
+
 	if err := r.ParseMultipartForm(multipartMemoryMax); err != nil {
 		return requestPayload{}, fmt.Errorf("parse form: %w", err)
 	}
 
-	formatFrom := normalizeFormat(r.FormValue("format_from"))
-	formatTo := normalizeFormat(r.FormValue("format_to"))
+	if r.MultipartForm != nil {
+		cleanupFns = append(cleanupFns, func() {
+			if err := r.MultipartForm.RemoveAll(); err != nil {
+				log.Printf("cleanup multipart temp files failed: %v", err)
+			}
+		})
+	}
 
-	file, header, err := r.FormFile("file")
+	formatFrom := normalizeFormat(r.FormValue(formFieldFormatFrom))
+	formatTo := normalizeFormat(r.FormValue(formFieldFormatTo))
+
+	file, header, err := r.FormFile(formFieldFile)
 	if err != nil {
+		cleanup()
 		return requestPayload{}, fmt.Errorf("read file: %w", err)
 	}
 	defer file.Close()
@@ -198,12 +243,14 @@ func parseRequestPayload(r *http.Request) (requestPayload, error) {
 
 	inputFile, err := os.CreateTemp("", tempPattern)
 	if err != nil {
+		cleanup()
 		return requestPayload{}, fmt.Errorf("create temp input: %w", err)
 	}
-
-	cleanup := func() {
-		_ = os.Remove(inputFile.Name())
-	}
+	cleanupFns = append(cleanupFns, func() {
+		if err := os.Remove(inputFile.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("cleanup input temp file failed: %v", err)
+		}
+	})
 
 	if _, err := io.Copy(inputFile, file); err != nil {
 		_ = inputFile.Close()
@@ -228,7 +275,7 @@ func parseRequestPayload(r *http.Request) (requestPayload, error) {
 		return requestPayload{}, fmt.Errorf("uploaded file exceeds maximum size")
 	}
 
-	if rawMetadata := r.FormValue("metadata"); rawMetadata != "" {
+	if rawMetadata := r.FormValue(formFieldMetadata); rawMetadata != "" {
 		if err := json.Unmarshal([]byte(rawMetadata), &payload.metadata); err != nil {
 			cleanup()
 			return requestPayload{}, fmt.Errorf("invalid metadata payload: %w", err)
@@ -243,12 +290,8 @@ func normalizeFormat(value string) string {
 }
 
 func isSupportedFormat(format string) bool {
-	switch format {
-	case "epub", "kepub", "azw3", "mobi", "txt":
-		return true
-	default:
-		return false
-	}
+	_, ok := supportedFormats[format]
+	return ok
 }
 
 func shouldApplyMetadata(metadata metadataPayload) bool {
@@ -317,20 +360,29 @@ func writeFileResponseFromPath(ctx context.Context, w http.ResponseWriter, forma
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := io.Copy(w, newContextReader(ctx, file)); err != nil {
-		return fmt.Errorf("stream file response: %w", err)
+		return &responseWriteError{
+			cause:           fmt.Errorf("stream file response: %w", err),
+			responseStarted: true,
+		}
 	}
 
 	return nil
 }
 
 func convertToKepub(ctx context.Context, w http.ResponseWriter, inputPath string) error {
-	data, err := os.ReadFile(inputPath)
+	inputFile, err := os.Open(inputPath)
 	if err != nil {
 		return fmt.Errorf("read input file: %w", err)
 	}
+	defer inputFile.Close()
 
-	// EPUB is a ZIP archive; zip.Reader implements fs.FS (Go 1.16+)
-	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	stat, err := inputFile.Stat()
+	if err != nil {
+		return fmt.Errorf("stat input file: %w", err)
+	}
+
+	// Keep memory flat by reading the EPUB ZIP directly from disk via ReaderAt.
+	zipReader, err := zip.NewReader(inputFile, stat.Size())
 	if err != nil {
 		return fmt.Errorf("open epub as zip: %w", err)
 	}
@@ -385,17 +437,37 @@ func convertWithCalibre(ctx context.Context, w http.ResponseWriter, inputPath st
 
 func contentTypeForFormat(format string) string {
 	switch format {
-	case "epub", "kepub":
+	case formatEPUB, formatKEPUB:
 		return "application/epub+zip"
-	case "mobi":
+	case formatMOBI:
 		return "application/x-mobipocket-ebook"
-	case "azw3":
+	case formatAZW3:
 		return "application/vnd.amazon.mobi8-ebook"
-	case "txt":
-		return "text/plain; charset=utf-8"
 	default:
 		return "application/octet-stream"
 	}
+}
+
+func isContextTimeout(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+}
+
+func canWriteErrorResponse(err error) bool {
+	var streamErr *responseWriteError
+	if errors.As(err, &streamErr) {
+		return !streamErr.responseStarted
+	}
+
+	return true
+}
+
+func writeErrorIfPossible(w http.ResponseWriter, status int, message string, err error) {
+	if canWriteErrorResponse(err) {
+		writeError(w, status, message, err)
+		return
+	}
+
+	log.Printf("request failed after response started: status=%d message=%q err=%v", status, message, err)
 }
 
 func writeError(w http.ResponseWriter, status int, message string, err error) {
