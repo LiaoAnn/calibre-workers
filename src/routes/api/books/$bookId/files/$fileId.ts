@@ -29,13 +29,13 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 						fileRecord.metadataStatus === "processing"
 					) {
 						return {
-							locked: true,
+							locked: true as const,
 							fileRecord,
 						};
 					}
 
 					const object = yield* getBookFile(fileRecord.r2Key);
-					return { locked: false, fileRecord, object };
+					return { locked: false as const, fileRecord, object };
 				});
 
 				const result = await Effect.runPromise(
