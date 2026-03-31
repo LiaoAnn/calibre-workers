@@ -42,8 +42,6 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 		const taskId = crypto.randomUUID();
 		const userId = context.session.user.id;
 
-		// Use streaming instead of buffering entire file
-		const fileStream = file.stream();
 		const isEpub = isSupportedUploadFile(file);
 
 		const runnable = Effect.gen(function* () {
@@ -57,17 +55,33 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 				status: "processing",
 			});
 
-			// For metadata extraction, we still need to read the file
-			// but we can do it in chunks for EPUB parsing
+			// Read once for EPUB validation, metadata extraction, and integrity checks.
 			const fileBuffer = yield* Effect.tryPromise({
 				try: () => file.arrayBuffer(),
 				catch: (cause) =>
 					new UploadError({ message: "Failed to read file", cause }),
 			});
 
+			if (fileBuffer.byteLength !== file.size) {
+				return yield* Effect.fail(
+					new UploadError({
+						message:
+							"Invalid or incomplete upload. File size does not match payload.",
+					}),
+				);
+			}
+
 			const extractedMetadata: EpubMetadata = isEpub
 				? yield* parseEpubMetadata(fileBuffer).pipe(
-						Effect.catchAll(() => Effect.succeed({} as EpubMetadata)),
+						Effect.catchAll((cause) =>
+							Effect.fail(
+								new UploadError({
+									message:
+										"Invalid or corrupted EPUB file. Could not parse metadata.",
+									cause,
+								}),
+							),
+						),
 					)
 				: ({} as EpubMetadata);
 
@@ -150,8 +164,9 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 				// Upload main file using stream
 				yield* uploadBookFile({
 					r2Key: created.file.r2Key,
-					body: fileStream,
+					body: fileBuffer,
 					contentType: file.type || undefined,
+					expectedSize: file.size,
 				});
 
 				// Upload cover if exists
@@ -163,6 +178,7 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 						r2Key: createdResources.coverR2Key,
 						body: cover.data,
 						contentType: cover.mimeType,
+						expectedSize: cover.data.byteLength,
 					});
 				}
 

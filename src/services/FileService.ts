@@ -19,20 +19,44 @@ interface UploadBookFileInput {
 	r2Key: string;
 	body: ArrayBuffer | ArrayBufferView | ReadableStream<Uint8Array>;
 	contentType?: string;
+	expectedSize?: number;
 }
 
 export const uploadBookFile = ({
 	r2Key,
 	body,
 	contentType,
+	expectedSize,
 }: UploadBookFileInput) =>
 	Effect.gen(function* () {
 		const storage = yield* R2Context;
 
-		yield* Effect.tryPromise({
+		const uploaded = yield* Effect.tryPromise({
 			try: () => storage.put(r2Key, body, { httpMetadata: { contentType } }),
 			catch: (cause) => new StorageError({ operation: "file.upload", cause }),
 		});
+
+		if (typeof expectedSize === "number" && uploaded.size !== expectedSize) {
+			yield* Effect.tryPromise({
+				try: () => storage.delete(r2Key),
+				catch: (cause) =>
+					new StorageError({
+						operation: "file.deleteAfterSizeMismatch",
+						cause,
+					}),
+			}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+			return yield* Effect.fail(
+				new StorageError({
+					operation: "file.upload.sizeMismatch",
+					cause: {
+						r2Key,
+						expectedSize,
+						uploadedSize: uploaded.size,
+					},
+				}),
+			);
+		}
 	});
 
 export const deleteBookFile = (r2Key: string) =>

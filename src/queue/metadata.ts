@@ -73,6 +73,7 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 				r2Key,
 				body: processed.bytes,
 				contentType: processed.contentType || mimeTypeForFormat(format),
+				expectedSize: processed.bytes.byteLength,
 			});
 
 			yield* setBookFileMetadataStatus({

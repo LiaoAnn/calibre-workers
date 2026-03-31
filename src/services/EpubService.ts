@@ -143,12 +143,12 @@ export const parseEpubMetadata = (buffer: ArrayBuffer) =>
 			const entries = unzipSync(new Uint8Array(buffer));
 			const opfPath = findOpfPath(entries);
 			if (!opfPath) {
-				return {} satisfies EpubMetadata;
+				throw new Error("Invalid EPUB: missing package document (.opf)");
 			}
 
 			const opfXml = readZipText(entries, opfPath);
 			if (!opfXml) {
-				return {} satisfies EpubMetadata;
+				throw new Error("Invalid EPUB: unreadable package document (.opf)");
 			}
 
 			const authors = extractAllTagContents(opfXml, "creator");

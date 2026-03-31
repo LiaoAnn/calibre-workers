@@ -100,6 +100,7 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 				body: processed.bytes,
 				contentType:
 					processed.contentType || mimeTypeForFormat(job.targetFormat),
+				expectedSize: processed.bytes.byteLength,
 			});
 
 			const { fileId: resultFileId } = yield* createBookFile({
