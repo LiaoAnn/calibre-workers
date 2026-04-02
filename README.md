@@ -9,48 +9,6 @@ pnpm install
 pnpm dev
 ```
 
-## EPUB Migration Tool (Temporary)
-
-This project includes a temporary migration flow that imports `.epub` files while
-preserving the file creation time from your local filesystem as the book
-timestamp in the database.
-
-### 1. Configure migration secret
-
-Set a worker secret for the migration API:
-
-```bash
-wrangler secret put MIGRATION_SECRET
-```
-
-For local development, add the same value into your local Wrangler env file
-(for example `.dev.vars`).
-
-### 2. Start local server
-
-```bash
-pnpm dev
-```
-
-### 3. Run migration CLI
-
-```bash
-MIGRATION_SECRET=your_secret pnpm migrate:epub -- --dir /path/to/your/epubs
-```
-
-Optional flags:
-
-```bash
---endpoint http://localhost:8787/api/migration/import-epub
---dry-run
-```
-
-Notes:
-
-- The CLI reads `fs.stat(...).birthtime` from your OS.
-- Files are uploaded in ascending creation-time order.
-- If no valid `birthtime` is available for a file, that file is skipped.
-
 # Building For Production
 
 To build this application for production:

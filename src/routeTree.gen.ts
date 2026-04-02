@@ -18,7 +18,6 @@ import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
 import { Route as AuthorNameRouteImport } from './routes/author.$name'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
-import { Route as ApiMigrationImportEpubRouteImport } from './routes/api/migration/import-epub'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
 import { Route as ApiBooksBookIdFilesFileIdRouteImport } from './routes/api/books/$bookId/files/$fileId'
@@ -68,11 +67,6 @@ const BooksBookIdEditRoute = BooksBookIdEditRouteImport.update({
   path: '/books/$bookId/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiMigrationImportEpubRoute = ApiMigrationImportEpubRouteImport.update({
-  id: '/api/migration/import-epub',
-  path: '/api/migration/import-epub',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -100,7 +94,6 @@ export interface FileRoutesByFullPath {
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/migration/import-epub': typeof ApiMigrationImportEpubRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
@@ -115,7 +108,6 @@ export interface FileRoutesByTo {
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/migration/import-epub': typeof ApiMigrationImportEpubRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
@@ -131,7 +123,6 @@ export interface FileRoutesById {
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/migration/import-epub': typeof ApiMigrationImportEpubRoute
   '/books/$bookId_/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
@@ -148,7 +139,6 @@ export interface FileRouteTypes {
     | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
-    | '/api/migration/import-epub'
     | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
@@ -163,7 +153,6 @@ export interface FileRouteTypes {
     | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
-    | '/api/migration/import-epub'
     | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
@@ -178,7 +167,6 @@ export interface FileRouteTypes {
     | '/author/$name'
     | '/books/$bookId'
     | '/api/auth/$'
-    | '/api/migration/import-epub'
     | '/books/$bookId_/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
@@ -194,7 +182,6 @@ export interface RootRouteChildren {
   AuthorNameRoute: typeof AuthorNameRoute
   BooksBookIdRoute: typeof BooksBookIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiMigrationImportEpubRoute: typeof ApiMigrationImportEpubRoute
   BooksBookIdEditRoute: typeof BooksBookIdEditRoute
   ApiBooksBookIdCoverRoute: typeof ApiBooksBookIdCoverRoute
   ApiBooksBookIdFilesFileIdRoute: typeof ApiBooksBookIdFilesFileIdRoute
@@ -265,13 +252,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BooksBookIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/migration/import-epub': {
-      id: '/api/migration/import-epub'
-      path: '/api/migration/import-epub'
-      fullPath: '/api/migration/import-epub'
-      preLoaderRoute: typeof ApiMigrationImportEpubRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -306,7 +286,6 @@ const rootRouteChildren: RootRouteChildren = {
   AuthorNameRoute: AuthorNameRoute,
   BooksBookIdRoute: BooksBookIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiMigrationImportEpubRoute: ApiMigrationImportEpubRoute,
   BooksBookIdEditRoute: BooksBookIdEditRoute,
   ApiBooksBookIdCoverRoute: ApiBooksBookIdCoverRoute,
   ApiBooksBookIdFilesFileIdRoute: ApiBooksBookIdFilesFileIdRoute,

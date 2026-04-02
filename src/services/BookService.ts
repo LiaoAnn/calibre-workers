@@ -62,8 +62,6 @@ export interface CreateBookFromUploadInput {
 	mimeType?: string;
 	size: number;
 	hasCover?: boolean;
-	// TODO: remove this after migration
-	createdAt?: Date;
 }
 
 export const listBooks = ({
@@ -332,8 +330,6 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
 		const now = new Date();
-		// TODO: remove this after migration
-		const createdAt = input.createdAt ?? now;
 		const bookId = crypto.randomUUID();
 		const fileId = crypto.randomUUID();
 		const uuid = crypto.randomUUID();
@@ -355,7 +351,7 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 			uuid,
 			title: input.title,
 			authors: authorsStr,
-			timestamp: createdAt,
+			timestamp: now,
 			lastModified: now,
 			pubdate: input.pubdate,
 			seriesId,
@@ -406,8 +402,6 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 			r2Key,
 			mimeType: input.mimeType,
 			size: input.size,
-			// TODO: remove this after migration
-			createdAt,
 		});
 
 		return {
