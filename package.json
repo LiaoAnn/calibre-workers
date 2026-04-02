@@ -19,7 +19,8 @@
     "deploy": "pnpm run build && pnpm run db:apply --remote && wrangler deploy",
     "db:generate": "drizzle-kit generate",
     "db:apply": "wrangler d1 migrations apply calibre-workers-db",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "migrate:epub": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.1.1",
