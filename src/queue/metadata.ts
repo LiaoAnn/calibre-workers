@@ -4,6 +4,7 @@ import { Effect, Either } from "effect";
 import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
 import { AppLayerWithContainer } from "#/layers/AppLayer";
 import { ConverterContainerContext } from "#/layers/ConverterContainerLayer";
+import { r2Keys } from "#/lib/r2-keys";
 import {
 	getBookMetadataForProcess,
 	setBookFileMetadataStatus,
@@ -53,6 +54,7 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 
 			const latestMetadata = yield* getBookMetadataForProcess(bookId);
 			const source = yield* getBookFile(r2Key);
+			const { hasCover, ...metadataForContainer } = latestMetadata;
 
 			const bytes = yield* Effect.tryPromise({
 				try: () => source.arrayBuffer(),
@@ -62,11 +64,32 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 					),
 			});
 
+			const cover = hasCover
+				? yield* Effect.gen(function* () {
+						const coverObject = yield* getBookFile(
+							r2Keys.bookCover({ bookId }),
+						);
+						const coverBytes = yield* Effect.tryPromise({
+							try: () => coverObject.arrayBuffer(),
+							catch: (cause) =>
+								new Error(
+									`arrayBuffer failed for cover sync ${fileId}: ${String(cause)}`,
+								),
+						});
+
+						return {
+							bytes: coverBytes,
+							contentType: coverObject.httpMetadata?.contentType,
+						};
+					})
+				: undefined;
+
 			const container = yield* ConverterContainerContext;
 			const processed = yield* container.process(bytes, {
 				formatFrom: format,
 				formatTo: format,
-				metadata: latestMetadata,
+				metadata: metadataForContainer,
+				cover,
 			});
 
 			yield* uploadBookFile({

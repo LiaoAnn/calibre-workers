@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ const (
 	formFieldFormatFrom = "format_from"
 	formFieldFormatTo   = "format_to"
 	formFieldMetadata   = "metadata"
+	formFieldCover      = "cover"
 
 	formatEPUB  = "epub"
 	formatKEPUB = "kepub"
@@ -52,6 +54,7 @@ type requestPayload struct {
 	formatTo   string
 	metadata   metadataPayload
 	inputPath  string
+	coverPath  string
 	cleanup    func()
 }
 
@@ -126,8 +129,14 @@ func handleProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if shouldApplyMetadata(payload.metadata) {
-		if err := applyMetadataWithCalibre(ctx, payload.inputPath, payload.metadata); err != nil {
+	if shouldApplyMetadata(payload.metadata, payload.coverPath) {
+		if err := applyMetadataWithCalibre(
+			ctx,
+			payload.inputPath,
+			payload.formatFrom,
+			payload.metadata,
+			payload.coverPath,
+		); err != nil {
 			if isContextTimeout(err) {
 				writeError(w, http.StatusGatewayTimeout, "metadata processing timed out", err)
 				return
@@ -282,6 +291,57 @@ func parseRequestPayload(r *http.Request) (requestPayload, error) {
 		}
 	}
 
+	coverFile, coverHeader, err := r.FormFile(formFieldCover)
+	if err != nil {
+		if !errors.Is(err, http.ErrMissingFile) {
+			cleanup()
+			return requestPayload{}, fmt.Errorf("read cover file: %w", err)
+		}
+	} else {
+		defer coverFile.Close()
+
+		coverPattern := "cover-*"
+		if coverHeader != nil {
+			if coverHeader.Size > maxUploadSize {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("uploaded cover file exceeds maximum size")
+			}
+
+			ext := strings.TrimSpace(strings.ToLower(filepath.Ext(coverHeader.Filename)))
+			if ext == "" {
+				ext = coverExtForContentType(coverHeader.Header.Get("Content-Type"))
+			}
+			if ext != "" {
+				coverPattern = fmt.Sprintf("cover-*%s", ext)
+			}
+		}
+
+		coverTempFile, err := os.CreateTemp("", coverPattern)
+		if err != nil {
+			cleanup()
+			return requestPayload{}, fmt.Errorf("create temp cover: %w", err)
+		}
+
+		cleanupFns = append(cleanupFns, func() {
+			if err := os.Remove(coverTempFile.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Printf("cleanup cover temp file failed: %v", err)
+			}
+		})
+
+		if _, err := io.Copy(coverTempFile, coverFile); err != nil {
+			_ = coverTempFile.Close()
+			cleanup()
+			return requestPayload{}, fmt.Errorf("write temp cover: %w", err)
+		}
+
+		if err := coverTempFile.Close(); err != nil {
+			cleanup()
+			return requestPayload{}, fmt.Errorf("close temp cover: %w", err)
+		}
+
+		payload.coverPath = coverTempFile.Name()
+	}
+
 	return payload, nil
 }
 
@@ -289,20 +349,49 @@ func normalizeFormat(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
+func coverExtForContentType(contentType string) string {
+	normalized := strings.TrimSpace(strings.ToLower(contentType))
+	if idx := strings.Index(normalized, ";"); idx >= 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+
+	switch normalized {
+	case "image/jpeg", "image/jpg", "image/pjpeg":
+		return ".jpg"
+	case "image/png", "image/x-png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	default:
+		return ""
+	}
+}
+
 func isSupportedFormat(format string) bool {
 	_, ok := supportedFormats[format]
 	return ok
 }
 
-func shouldApplyMetadata(metadata metadataPayload) bool {
+func shouldApplyMetadata(metadata metadataPayload, coverPath string) bool {
 	return metadata.Title != "" ||
 		len(metadata.Authors) > 0 ||
 		metadata.Language != "" ||
-		metadata.Publisher != ""
+		metadata.Publisher != "" ||
+		strings.TrimSpace(coverPath) != ""
 }
 
-func applyMetadataWithCalibre(ctx context.Context, inputPath string, metadata metadataPayload) error {
+func applyMetadataWithCalibre(
+	ctx context.Context,
+	inputPath string,
+	formatFrom string,
+	metadata metadataPayload,
+	coverPath string,
+) error {
 	args := []string{inputPath}
+	normalizedFormat := normalizeFormat(formatFrom)
+	trimmedCover := strings.TrimSpace(coverPath)
 
 	if title := strings.TrimSpace(metadata.Title); title != "" {
 		args = append(args, "--title", title)
@@ -329,15 +418,52 @@ func applyMetadataWithCalibre(ctx context.Context, inputPath string, metadata me
 		args = append(args, "--publisher", publisher)
 	}
 
-	if len(args) == 1 {
-		return nil
+	// Keep non-EPUB formats on ebook-meta --cover.
+	if trimmedCover != "" && normalizedFormat != formatEPUB && normalizedFormat != formatKEPUB {
+		args = append(args, "--cover", trimmedCover)
 	}
 
-	cmd := exec.CommandContext(ctx, "ebook-meta", args...)
+	if len(args) > 1 {
+		cmd := exec.CommandContext(ctx, "ebook-meta", args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("ebook-meta failed: input=%s err=%v output=%s", inputPath, err, string(output))
+			return err
+		}
+	}
+
+	if trimmedCover != "" && (normalizedFormat == formatEPUB || normalizedFormat == formatKEPUB) {
+		if err := applyCoverWithPolish(ctx, inputPath, trimmedCover); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func applyCoverWithPolish(ctx context.Context, inputPath string, coverPath string) error {
+	outputFile, err := os.CreateTemp("", "polish-cover-*.epub")
+	if err != nil {
+		return fmt.Errorf("create polish output: %w", err)
+	}
+	outputPath := outputFile.Name()
+	if err := outputFile.Close(); err != nil {
+		_ = os.Remove(outputPath)
+		return fmt.Errorf("close polish output temp file: %w", err)
+	}
+	defer func() {
+		_ = os.Remove(outputPath)
+	}()
+
+	cmd := exec.CommandContext(ctx, "ebook-polish", "--cover", coverPath, inputPath, outputPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("ebook-meta failed: input=%s err=%v output=%s", inputPath, err, string(output))
+		log.Printf("ebook-polish failed: input=%s cover=%s err=%v output=%s", inputPath, coverPath, err, string(output))
 		return err
+	}
+
+	if err := os.Rename(outputPath, inputPath); err != nil {
+		return fmt.Errorf("replace polished epub: %w", err)
 	}
 
 	return nil

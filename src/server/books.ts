@@ -3,6 +3,7 @@ import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import { AppLayer } from "#/layers/AppLayer";
+import { r2Keys } from "#/lib/r2-keys";
 import { requiredSessionMiddleware } from "#/middleware/auth";
 import type { MetadataQueueMessage } from "#/queue";
 import {
@@ -13,6 +14,11 @@ import {
 	type UpdateBookInput,
 	updateBook,
 } from "#/services/BookService";
+import {
+	deleteBookFile,
+	getBookFile,
+	uploadBookFile,
+} from "#/services/FileService";
 
 interface ListBooksServerInput {
 	page?: number;
@@ -22,6 +28,10 @@ interface ListBooksServerInput {
 
 interface GetBookByIdServerInput {
 	bookId: string;
+}
+
+interface UpdateBookServerInput extends UpdateBookInput {
+	coverTempR2Key?: string;
 }
 
 export const listBooksServerFn = createServerFn({ method: "GET" })
@@ -56,11 +66,29 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 
 export const updateBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: UpdateBookInput) => input)
+	.inputValidator((input: UpdateBookServerInput) => input)
 	.handler(async ({ data }) => {
+		const { coverTempR2Key, ...bookInput } = data;
+
 		const files = await Effect.runPromise(
 			Effect.gen(function* () {
-				yield* updateBook(data);
+				if (coverTempR2Key) {
+					const tempCoverObject = yield* getBookFile(coverTempR2Key);
+
+					yield* uploadBookFile({
+						r2Key: r2Keys.bookCover({ bookId: data.bookId }),
+						body: tempCoverObject.body,
+						contentType: tempCoverObject.httpMetadata?.contentType,
+						expectedSize: tempCoverObject.size,
+					});
+
+					yield* deleteBookFile(coverTempR2Key);
+				}
+
+				yield* updateBook({
+					...bookInput,
+					hasCover: coverTempR2Key ? true : undefined,
+				});
 				const files = yield* listBookFilesForMetadataSync(data.bookId);
 
 				if (files.length > 0) {

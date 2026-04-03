@@ -4,6 +4,11 @@ import { Data, Effect } from "effect";
 import * as schema from "#/db/schema";
 import { AppLayer } from "#/layers/AppLayer";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
+import {
+	COVER_MAX_UPLOAD_SIZE_BYTES,
+	type CoverValidationIssue,
+	validateCoverFile,
+} from "#/lib/cover-validation";
 import { r2Keys } from "#/lib/r2-keys";
 import { requiredSessionMiddleware } from "#/middleware/auth";
 import { createBookFromUpload, deleteBook } from "#/services/BookService";
@@ -19,6 +24,66 @@ class UploadError extends Data.TaggedError("UploadError")<{
 const isSupportedUploadFile = (file: File) =>
 	file.name.toLowerCase().endsWith(".epub") ||
 	file.type.toLowerCase().includes("epub");
+
+const coverValidationErrorMessage = (issue: CoverValidationIssue): string => {
+	switch (issue) {
+		case "unsupported-type":
+			return "Unsupported cover format. Please upload an image file.";
+		case "empty-file":
+			return "Cover file is empty.";
+		case "too-large":
+			return `Cover file is too large. Maximum size is ${Math.floor(COVER_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))}MB.`;
+	}
+};
+
+export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
+	.middleware([requiredSessionMiddleware])
+	.inputValidator((input: FormData) => input)
+	.handler(async ({ data }) => {
+		const bookId = data.get("bookId");
+		const file = data.get("file");
+
+		if (typeof bookId !== "string" || bookId.trim().length === 0) {
+			throw new Error("Missing bookId");
+		}
+
+		if (!(file instanceof File)) {
+			throw new Error("Missing cover file");
+		}
+
+		const coverValidationIssue = validateCoverFile(file);
+		if (coverValidationIssue) {
+			throw new UploadError({
+				message: coverValidationErrorMessage(coverValidationIssue),
+			});
+		}
+
+		const tempR2Key = r2Keys.bookCoverTemp({
+			bookId: bookId.trim(),
+			tempId: crypto.randomUUID(),
+		});
+
+		const bytes = await file.arrayBuffer();
+		if (bytes.byteLength !== file.size) {
+			throw new UploadError({
+				message:
+					"Invalid or incomplete upload. Cover size does not match payload.",
+			});
+		}
+
+		await Effect.runPromise(
+			uploadBookFile({
+				r2Key: tempR2Key,
+				body: bytes,
+				contentType: file.type || undefined,
+				expectedSize: file.size,
+			}).pipe(Effect.provide(AppLayer)),
+		);
+
+		return {
+			tempR2Key,
+		};
+	});
 
 export const uploadBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])

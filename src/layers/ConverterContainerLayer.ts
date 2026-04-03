@@ -17,6 +17,10 @@ export interface ContainerProcessOptions {
 		language?: string;
 		publisher?: string;
 	};
+	cover?: {
+		bytes: ArrayBuffer;
+		contentType?: string;
+	};
 }
 
 export interface ContainerProcessResult {
@@ -40,6 +44,26 @@ export class ConverterContainerContext extends Context.Tag(
 	"ConverterContainerContext",
 )<ConverterContainerContext, ConverterContainerService>() {}
 
+const coverFileNameForContentType = (contentType?: string): string => {
+	const mimeType = contentType?.split(";")[0]?.trim().toLowerCase();
+
+	switch (mimeType) {
+		case "image/jpeg":
+		case "image/jpg":
+		case "image/pjpeg":
+			return "cover.jpg";
+		case "image/png":
+		case "image/x-png":
+			return "cover.png";
+		case "image/webp":
+			return "cover.webp";
+		case "image/gif":
+			return "cover.gif";
+		default:
+			return "cover";
+	}
+};
+
 const processInContainer = (
 	bytes: ArrayBuffer,
 	options: ContainerProcessOptions,
@@ -55,6 +79,15 @@ const processInContainer = (
 			formData.append("format_to", options.formatTo);
 			if (options.metadata) {
 				formData.append("metadata", JSON.stringify(options.metadata));
+			}
+			if (options.cover) {
+				formData.append(
+					"cover",
+					new Blob([options.cover.bytes], {
+						type: options.cover.contentType ?? "application/octet-stream",
+					}),
+					coverFileNameForContentType(options.cover.contentType),
+				);
 			}
 
 			// Container.fetch() forwards the request to the container at defaultPort (8080)

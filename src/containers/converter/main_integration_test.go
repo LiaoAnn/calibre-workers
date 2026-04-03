@@ -80,7 +80,7 @@ func TestApplyMetadataWithCalibre_UpdatesEPUBOPF(t *testing.T) {
 		Publisher: "Calibre Workers Press",
 	}
 
-	if err := applyMetadataWithCalibre(context.Background(), inputPath, metadata); err != nil {
+	if err := applyMetadataWithCalibre(context.Background(), inputPath, formatEPUB, metadata, ""); err != nil {
 		t.Fatalf("applyMetadataWithCalibre failed: %v", err)
 	}
 

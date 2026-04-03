@@ -12,6 +12,7 @@ interface BookMetadataForProcess {
 	authors: string[];
 	language?: string;
 	publisher?: string;
+	hasCover: boolean;
 }
 
 interface MetadataSyncFile {
@@ -178,6 +179,7 @@ export const getBookMetadataForProcess = (bookId: string) =>
 				title: schema.books.title,
 				authors: schema.books.authors,
 				language: schema.books.language,
+				hasCover: schema.books.hasCover,
 				publisher: schema.publishers.name,
 			})
 			.from(schema.books)
@@ -201,6 +203,7 @@ export const getBookMetadataForProcess = (bookId: string) =>
 				.filter(Boolean),
 			language: row.language ?? undefined,
 			publisher: row.publisher ?? undefined,
+			hasCover: row.hasCover,
 		} satisfies BookMetadataForProcess;
 	});
 
@@ -429,6 +432,7 @@ export interface UpdateBookInput {
 	publisher?: string;
 	tags?: string[];
 	language?: string;
+	hasCover?: boolean;
 	/** ISO date string (YYYY-MM-DD) or undefined/null to clear */
 	pubdate?: string | null;
 	series?: string;
@@ -462,6 +466,9 @@ export const updateBook = (input: UpdateBookInput) =>
 				seriesIndex: input.seriesIndex ?? null,
 				language: input.language?.trim() || null,
 				publisherId,
+				...(typeof input.hasCover === "boolean"
+					? { hasCover: input.hasCover }
+					: {}),
 				lastModified: now,
 			})
 			.where(eq(schema.books.id, bookId));

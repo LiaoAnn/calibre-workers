@@ -12,6 +12,11 @@ import { Combobox } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
+import {
+	COVER_ACCEPT_MIME_TYPES,
+	type CoverValidationIssue,
+	validateCoverFile,
+} from "#/lib/cover-validation";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import {
 	searchAuthorsServerFn,
@@ -22,6 +27,7 @@ import {
 	searchTagsServerFn,
 } from "#/server/autocomplete";
 import { getBookByIdServerFn, updateBookServerFn } from "#/server/books";
+import { uploadBookCoverTempServerFn } from "#/server/files";
 
 export const Route = createFileRoute("/books/$bookId_/edit")({
 	beforeLoad: async () => {
@@ -43,6 +49,17 @@ export const Route = createFileRoute("/books/$bookId_/edit")({
 });
 
 type IdentifierEntry = { type: string; value: string };
+
+const coverValidationErrorMessage = (issue: CoverValidationIssue): string => {
+	switch (issue) {
+		case "unsupported-type":
+			return "不支援的封面格式，請上傳圖片檔（jpg/jpeg/png/webp/gif）。";
+		case "empty-file":
+			return "封面檔案不可為空。";
+		case "too-large":
+			return "封面檔案過大，請上傳 10MB 以下的圖片。";
+	}
+};
 
 function EditBookPage() {
 	const book = Route.useLoaderData();
@@ -70,6 +87,8 @@ function EditBookPage() {
 	const [identifiers, setIdentifiers] = useState<IdentifierEntry[]>(
 		book.identifiers.map((i) => ({ type: i.type, value: i.value })),
 	);
+	const [coverFile, setCoverFile] = useState<File | null>(null);
+	const [coverError, setCoverError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -144,11 +163,54 @@ function EditBookPage() {
 		.filter(Boolean);
 	const setTagsFromArray = (arr: string[]) => setTagsStr(arr.join(", "));
 
+	const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const selectedFile = e.currentTarget.files?.[0] ?? null;
+
+		if (!selectedFile) {
+			setCoverFile(null);
+			setCoverError(null);
+			return;
+		}
+
+		const validationIssue = validateCoverFile(selectedFile);
+		const validationError = validationIssue
+			? coverValidationErrorMessage(validationIssue)
+			: null;
+		if (validationError) {
+			setCoverFile(null);
+			setCoverError(validationError);
+			e.currentTarget.value = "";
+			return;
+		}
+
+		setCoverFile(selectedFile);
+		setCoverError(null);
+	};
+
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setSaving(true);
 		setError(null);
+
+		if (coverError) {
+			setError(coverError);
+			setSaving(false);
+			return;
+		}
+
 		try {
+			let coverTempR2Key: string | undefined;
+			if (coverFile) {
+				const formData = new FormData();
+				formData.set("bookId", bookId);
+				formData.set("file", coverFile);
+
+				const uploadResult = await uploadBookCoverTempServerFn({
+					data: formData,
+				});
+				coverTempR2Key = uploadResult.tempR2Key;
+			}
+
 			await updateBookServerFn({
 				data: {
 					bookId,
@@ -174,6 +236,7 @@ function EditBookPage() {
 					identifiers: identifiers.filter(
 						(i) => i.type.trim() && i.value.trim(),
 					),
+					coverTempR2Key,
 				},
 			});
 			navigate({ to: "/books/$bookId", params: { bookId } });
@@ -207,9 +270,7 @@ function EditBookPage() {
 							← 返回書本詳情
 						</Link>
 					</Button>
-					<h1 className="text-2xl font-bold text-[var(--sea-ink)]">
-						編輯 Metadata
-					</h1>
+					<h1 className="text-2xl font-bold text-(--sea-ink)">編輯 Metadata</h1>
 				</div>
 
 				<form onSubmit={handleSubmit} className="space-y-5">
@@ -223,6 +284,32 @@ function EditBookPage() {
 							onChange={(e) => setTitle(e.target.value)}
 							required
 						/>
+					</div>
+
+					<div className="space-y-2">
+						<Label htmlFor="edit-cover">封面</Label>
+						<Input
+							id="edit-cover"
+							type="file"
+							accept={COVER_ACCEPT_MIME_TYPES}
+							onChange={handleCoverChange}
+							aria-invalid={coverError ? true : undefined}
+						/>
+						<p className="text-xs text-muted-foreground">
+							新封面會先暫存，按下儲存後才會套用並同步寫入書本檔案。
+						</p>
+						{coverError ? (
+							<p className="text-xs text-destructive">{coverError}</p>
+						) : null}
+						{coverFile ? (
+							<p className="text-xs text-muted-foreground">
+								已選擇：{coverFile.name}
+							</p>
+						) : book.hasCover ? (
+							<p className="text-xs text-muted-foreground">目前已有封面</p>
+						) : (
+							<p className="text-xs text-muted-foreground">目前沒有封面</p>
+						)}
 					</div>
 
 					{/* 作者（多作者，逗號分隔） */}

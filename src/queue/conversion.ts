@@ -75,6 +75,26 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 
 			const container = yield* ConverterContainerContext;
 			const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
+			const { hasCover, ...metadataForContainer } = latestMetadata;
+			const cover = hasCover
+				? yield* Effect.gen(function* () {
+						const coverObject = yield* getBookFile(
+							r2Keys.bookCover({ bookId: job.bookId }),
+						);
+						const coverBytes = yield* Effect.tryPromise({
+							try: () => coverObject.arrayBuffer(),
+							catch: (cause) =>
+								new Error(
+									`cover arrayBuffer failed for job ${jobId}: ${String(cause)}`,
+								),
+						});
+
+						return {
+							bytes: coverBytes,
+							contentType: coverObject.httpMetadata?.contentType,
+						};
+					})
+				: undefined;
 
 			const convertedBytes = yield* container.convert(
 				bytes,
@@ -85,7 +105,8 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 			const processed = yield* container.process(convertedBytes, {
 				formatFrom: job.targetFormat,
 				formatTo: job.targetFormat,
-				metadata: latestMetadata,
+				metadata: metadataForContainer,
+				cover,
 			});
 
 			const baseName = fileRecord.fileName.replace(/\.[^.]+$/, "");
