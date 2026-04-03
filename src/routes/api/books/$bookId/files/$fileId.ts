@@ -30,6 +30,15 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 					) {
 						return {
 							locked: true as const,
+							status: fileRecord.metadataStatus,
+							fileRecord,
+						};
+					}
+
+					if (fileRecord.metadataStatus === "failed") {
+						return {
+							locked: true as const,
+							status: fileRecord.metadataStatus,
 							fileRecord,
 						};
 					}
@@ -43,12 +52,29 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 				);
 
 				if (!result) {
-					return new Response("File not found", { status: 404 });
+					return new Response("File not found", {
+						status: 404,
+						headers: {
+							"cache-control": "no-store",
+						},
+					});
 				}
 
 				if (result.locked) {
+					if (result.status === "failed") {
+						return new Response("File metadata synchronization failed", {
+							status: 409,
+							headers: {
+								"cache-control": "no-store",
+							},
+						});
+					}
+
 					return new Response("File metadata is being synchronized", {
 						status: 423,
+						headers: {
+							"cache-control": "no-store",
+						},
 					});
 				}
 
@@ -67,6 +93,7 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 					"content-disposition",
 					`attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
 				);
+				headers.set("cache-control", "no-store");
 
 				return new Response(result.object.body, {
 					status: 200,
