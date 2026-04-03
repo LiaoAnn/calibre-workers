@@ -5,16 +5,20 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /app
 
-# Skip checksum DB lookup — build environments often can't reach sum.golang.org
-ENV GONOSUMDB=*
+# Skip checksum DB lookup and use direct module fetch to avoid proxy timeouts
+ENV GONOSUMDB=* \
+  GOPROXY=direct
 
-# Copy module definition first for layer caching, then source
-COPY go.mod main.go ./
+# Copy module metadata first for layer caching
+COPY go.mod go.sum ./
 
-# go mod tidy resolves and pins all dependencies (generates go.sum)
-RUN go mod tidy
+# Resolve dependencies from locked go.mod/go.sum
+RUN go mod download
 
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o converter .
+# Copy source after dependency layer
+COPY main.go ./
+
+RUN CGO_ENABLED=0 GOOS=linux GOFLAGS=-mod=readonly go build -trimpath -ldflags="-s -w" -o converter .
 
 # ── Stage 2: Runtime ───────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
