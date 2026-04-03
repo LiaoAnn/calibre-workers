@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
@@ -281,6 +281,38 @@ export const setBookFileMetadataStatus = ({
 			.update(schema.bookFiles)
 			.set({ metadataStatus: status })
 			.where(whereClause);
+	});
+
+export const failStaleMetadataTasks = ({
+	staleBookLastModifiedBefore,
+}: {
+	staleBookLastModifiedBefore: Date;
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const staleFiles = yield* database
+			.select({ id: schema.bookFiles.id })
+			.from(schema.bookFiles)
+			.innerJoin(schema.books, eq(schema.bookFiles.bookId, schema.books.id))
+			.where(
+				and(
+					inArray(schema.bookFiles.metadataStatus, ["pending", "processing"]),
+					lt(schema.books.lastModified, staleBookLastModifiedBefore),
+				),
+			);
+
+		if (staleFiles.length === 0) {
+			return { affectedCount: 0 };
+		}
+
+		const staleFileIds = staleFiles.map((file) => file.id);
+
+		yield* database
+			.update(schema.bookFiles)
+			.set({ metadataStatus: "failed" })
+			.where(inArray(schema.bookFiles.id, staleFileIds));
+
+		return { affectedCount: staleFileIds.length };
 	});
 
 // ---------------------------------------------------------------------------

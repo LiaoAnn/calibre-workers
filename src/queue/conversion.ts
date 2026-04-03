@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { Effect, Either } from "effect";
+import { Cause, Duration, Effect, Exit } from "effect";
 import type { BookFileFormat } from "#/db/schema";
 import { AppLayerWithContainer } from "#/layers/AppLayer";
 import { ConverterContainerContext } from "#/layers/ConverterContainerLayer";
@@ -22,6 +22,7 @@ export interface ConversionQueueMessage {
 }
 
 const CONVERSION_MAX_ATTEMPTS = 3;
+const CONVERSION_TASK_TIMEOUT = Duration.minutes(10);
 
 const isBookFileFormat = (format: string): format is BookFileFormat =>
 	format === "epub" ||
@@ -47,125 +48,174 @@ function mimeTypeForFormat(format: string) {
 	}
 }
 
+const runConversionJob = (jobId: string) =>
+	Effect.gen(function* () {
+		const job = yield* getConversionJob(jobId);
+
+		if (!isBookFileFormat(job.targetFormat)) {
+			return yield* Effect.fail(
+				new Error(`Unsupported target format: ${job.targetFormat}`),
+			);
+		}
+
+		yield* updateConversionJobStatus(jobId, { status: "processing" });
+
+		const fileRecord = yield* getBookFileRecord(job.bookId, job.sourceFileId);
+
+		const r2Object = yield* getBookFile(fileRecord.r2Key);
+		const bytes = yield* Effect.tryPromise({
+			try: () => r2Object.arrayBuffer(),
+			catch: (cause) => new Error(`arrayBuffer failed: ${String(cause)}`),
+		});
+
+		const container = yield* ConverterContainerContext;
+		const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
+		const { hasCover, ...metadataForContainer } = latestMetadata;
+		const cover = hasCover
+			? yield* Effect.gen(function* () {
+					const coverObject = yield* getBookFile(
+						r2Keys.bookCover({ bookId: job.bookId }),
+					);
+					const coverBytes = yield* Effect.tryPromise({
+						try: () => coverObject.arrayBuffer(),
+						catch: (cause) =>
+							new Error(
+								`cover arrayBuffer failed for job ${jobId}: ${String(cause)}`,
+							),
+					});
+
+					return {
+						bytes: coverBytes,
+						contentType: coverObject.httpMetadata?.contentType,
+					};
+				})
+			: undefined;
+
+		const convertedBytes = yield* container.convert(
+			bytes,
+			fileRecord.format,
+			job.targetFormat,
+		);
+
+		const processed = yield* container.process(convertedBytes, {
+			formatFrom: job.targetFormat,
+			formatTo: job.targetFormat,
+			metadata: metadataForContainer,
+			cover,
+		});
+
+		const baseName = fileRecord.fileName.replace(/\.[^.]+$/, "");
+		const resultFileName = `${baseName}.${job.targetFormat}`;
+		const resultR2Key = r2Keys.bookFile({
+			bookId: job.bookId,
+			fileName: resultFileName,
+		});
+
+		yield* uploadBookFile({
+			r2Key: resultR2Key,
+			body: processed.bytes,
+			contentType: processed.contentType || mimeTypeForFormat(job.targetFormat),
+			expectedSize: processed.bytes.byteLength,
+		});
+
+		const { fileId: resultFileId } = yield* createBookFile({
+			bookId: job.bookId,
+			format: job.targetFormat,
+			fileName: resultFileName,
+			r2Key: resultR2Key,
+			size: processed.bytes.byteLength,
+			mimeType: processed.contentType || mimeTypeForFormat(job.targetFormat),
+		});
+
+		yield* updateConversionJobStatus(jobId, {
+			status: "done",
+			resultFileId,
+		});
+	});
+
+const settleConversionFailure = ({
+	jobId,
+	attempts,
+	errorMessage,
+	message,
+}: {
+	jobId: string;
+	attempts: number;
+	errorMessage: string;
+	message: Message<ConversionQueueMessage>;
+}) =>
+	Effect.gen(function* () {
+		const finalAttempt = attempts >= CONVERSION_MAX_ATTEMPTS;
+		const failedStatus = finalAttempt ? "failed" : "pending";
+
+		yield* updateConversionJobStatus(jobId, {
+			status: failedStatus,
+			errorMessage,
+		}).pipe(Effect.catchAll(() => Effect.void));
+
+		yield* Effect.sync(() => {
+			if (finalAttempt) {
+				message.ack();
+				return;
+			}
+
+			message.retry();
+		});
+	});
+
 export const handleConversionQueue: ExportedHandlerQueueHandler<
 	Env,
 	ConversionQueueMessage
 > = async (batch, _env) => {
-	for (const message of batch.messages) {
-		const { jobId } = message.body;
-
-		const runnable = Effect.gen(function* () {
-			const job = yield* getConversionJob(jobId);
-
-			if (!isBookFileFormat(job.targetFormat)) {
-				return yield* Effect.fail(
-					new Error(`Unsupported target format: ${job.targetFormat}`),
-				);
-			}
-
-			yield* updateConversionJobStatus(jobId, { status: "processing" });
-
-			const fileRecord = yield* getBookFileRecord(job.bookId, job.sourceFileId);
-
-			const r2Object = yield* getBookFile(fileRecord.r2Key);
-			const bytes = yield* Effect.tryPromise({
-				try: () => r2Object.arrayBuffer(),
-				catch: (cause) => new Error(`arrayBuffer failed: ${String(cause)}`),
-			});
-
-			const container = yield* ConverterContainerContext;
-			const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
-			const { hasCover, ...metadataForContainer } = latestMetadata;
-			const cover = hasCover
-				? yield* Effect.gen(function* () {
-						const coverObject = yield* getBookFile(
-							r2Keys.bookCover({ bookId: job.bookId }),
-						);
-						const coverBytes = yield* Effect.tryPromise({
-							try: () => coverObject.arrayBuffer(),
-							catch: (cause) =>
-								new Error(
-									`cover arrayBuffer failed for job ${jobId}: ${String(cause)}`,
-								),
-						});
-
-						return {
-							bytes: coverBytes,
-							contentType: coverObject.httpMetadata?.contentType,
-						};
-					})
-				: undefined;
-
-			const convertedBytes = yield* container.convert(
-				bytes,
-				fileRecord.format,
-				job.targetFormat,
+	const processMessage = (message: Message<ConversionQueueMessage>) =>
+		Effect.gen(function* () {
+			const { jobId } = message.body;
+			const exit = yield* Effect.exit(
+				runConversionJob(jobId).pipe(Effect.timeout(CONVERSION_TASK_TIMEOUT)),
 			);
 
-			const processed = yield* container.process(convertedBytes, {
-				formatFrom: job.targetFormat,
-				formatTo: job.targetFormat,
-				metadata: metadataForContainer,
-				cover,
+			if (Exit.isSuccess(exit)) {
+				yield* Effect.sync(() => message.ack());
+				return;
+			}
+
+			const causePretty = Cause.pretty(exit.cause);
+			yield* Effect.sync(() => {
+				console.error(
+					`Conversion queue failed for job ${jobId} (attempt ${message.attempts})`,
+					causePretty,
+				);
 			});
 
-			const baseName = fileRecord.fileName.replace(/\.[^.]+$/, "");
-			const resultFileName = `${baseName}.${job.targetFormat}`;
-			const resultR2Key = r2Keys.bookFile({
-				bookId: job.bookId,
-				fileName: resultFileName,
+			yield* settleConversionFailure({
+				jobId,
+				attempts: message.attempts,
+				errorMessage: causePretty,
+				message,
 			});
+		}).pipe(
+			Effect.catchAllCause((cause) =>
+				Effect.sync(() => {
+					const { jobId } = message.body;
+					console.error(
+						`Unexpected conversion queue failure for job ${jobId} (attempt ${message.attempts})`,
+						Cause.pretty(cause),
+					);
 
-			yield* uploadBookFile({
-				r2Key: resultR2Key,
-				body: processed.bytes,
-				contentType:
-					processed.contentType || mimeTypeForFormat(job.targetFormat),
-				expectedSize: processed.bytes.byteLength,
-			});
+					if (message.attempts >= CONVERSION_MAX_ATTEMPTS) {
+						message.ack();
+						return;
+					}
 
-			const { fileId: resultFileId } = yield* createBookFile({
-				bookId: job.bookId,
-				format: job.targetFormat,
-				fileName: resultFileName,
-				r2Key: resultR2Key,
-				size: processed.bytes.byteLength,
-				mimeType: processed.contentType || mimeTypeForFormat(job.targetFormat),
-			});
-
-			yield* updateConversionJobStatus(jobId, {
-				status: "done",
-				resultFileId,
-			});
-		});
-
-		const result = await Effect.runPromise(
-			Effect.either(runnable.pipe(Effect.provide(AppLayerWithContainer))),
-		);
-
-		if (Either.isRight(result)) {
-			message.ack();
-			continue;
-		}
-
-		const finalAttempt = message.attempts >= CONVERSION_MAX_ATTEMPTS;
-		const failedStatus = finalAttempt ? "failed" : "pending";
-
-		await Effect.runPromise(
-			updateConversionJobStatus(jobId, {
-				status: failedStatus,
-				errorMessage: String(result.left),
-			}).pipe(
-				Effect.catchAll(() => Effect.void),
-				Effect.provide(AppLayerWithContainer),
+					message.retry();
+				}),
 			),
 		);
 
-		if (finalAttempt) {
-			message.ack();
-			continue;
-		}
-
-		message.retry();
-	}
+	await Effect.runPromise(
+		Effect.forEach(batch.messages, processMessage, {
+			concurrency: "unbounded",
+			discard: true,
+		}).pipe(Effect.provide(AppLayerWithContainer)),
+	);
 };

@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import type { BookFileFormat, ConversionJobStatus } from "#/db/schema";
 import * as schema from "#/db/schema";
@@ -98,4 +98,41 @@ export const createBookFile = (input: CreateBookFileInput) =>
 		});
 
 		return { fileId: id };
+	});
+
+export const failStaleConversionJobs = ({
+	staleBefore,
+	errorMessage,
+}: {
+	staleBefore: Date;
+	errorMessage: string;
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const staleJobs = yield* database
+			.select({ id: schema.conversionJobs.id })
+			.from(schema.conversionJobs)
+			.where(
+				and(
+					inArray(schema.conversionJobs.status, ["pending", "processing"]),
+					lt(schema.conversionJobs.updatedAt, staleBefore),
+				),
+			);
+
+		if (staleJobs.length === 0) {
+			return { affectedCount: 0 };
+		}
+
+		const staleIds = staleJobs.map((job) => job.id);
+
+		yield* database
+			.update(schema.conversionJobs)
+			.set({
+				status: "failed",
+				errorMessage,
+				updatedAt: new Date(),
+			})
+			.where(inArray(schema.conversionJobs.id, staleIds));
+
+		return { affectedCount: staleIds.length };
 	});
