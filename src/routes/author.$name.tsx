@@ -7,7 +7,16 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import { getPageTitle } from "#/lib/utils";
 import { listBooksServerFn } from "#/server/books";
+
+const decodeName = (name: string) => {
+	try {
+		return decodeURIComponent(name);
+	} catch {
+		return name;
+	}
+};
 
 export const Route = createFileRoute("/author/$name")({
 	loader: ({ params }) =>
@@ -18,12 +27,16 @@ export const Route = createFileRoute("/author/$name")({
 				author: params.name,
 			},
 		}),
+	head: ({ params }) => ({
+		meta: [{ title: getPageTitle(decodeName(params.name)) }],
+	}),
 	component: AuthorPage,
 });
 
 function AuthorPage() {
 	const books = Route.useLoaderData();
 	const { name } = Route.useParams();
+	const authorName = decodeName(name);
 
 	return (
 		<main className="page-wrap px-4 pb-10 pt-12">
@@ -31,7 +44,7 @@ function AuthorPage() {
 				<CardHeader className="px-6 py-10 sm:px-10 sm:py-12">
 					<p className="island-kicker mb-2">Author</p>
 					<CardTitle className="display-title text-4xl font-bold tracking-tight sm:text-5xl">
-						{name}
+						{authorName}
 					</CardTitle>
 					<CardDescription className="mt-3 max-w-2xl text-sm sm:text-base">
 						共 {books.total} 本書。

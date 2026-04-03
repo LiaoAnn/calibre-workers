@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Combobox, type ComboboxOption } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import {
 	createManagedUserServerFn,
@@ -33,6 +34,9 @@ function isStatus(value: string): value is "active" | "pending" {
 }
 
 export const Route = createFileRoute("/admin/users")({
+	head: () => ({
+		meta: [{ title: getPageTitle("使用者管理") }],
+	}),
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 

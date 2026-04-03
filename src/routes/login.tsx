@@ -11,9 +11,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
+import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 
 export const Route = createFileRoute("/login")({
+	head: () => ({
+		meta: [{ title: getPageTitle("登入") }],
+	}),
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 

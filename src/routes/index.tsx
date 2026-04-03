@@ -9,12 +9,16 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { listBooksServerFn } from "#/server/books";
 
 const PAGE_SIZE = 24;
 
 export const Route = createFileRoute("/")({
+	head: () => ({
+		meta: [{ title: getPageTitle("書庫") }],
+	}),
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 

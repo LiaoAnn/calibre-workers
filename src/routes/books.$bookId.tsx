@@ -10,6 +10,7 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
 import { useConversionTasks } from "#/hooks/useConversionTasks";
+import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { getBookByIdServerFn } from "#/server/books";
 
@@ -17,6 +18,17 @@ const isMetadataSyncing = (status: MetadataSyncStatus) =>
 	status === "pending" || status === "processing";
 
 export const Route = createFileRoute("/books/$bookId")({
+	loader: async ({ params }) => ({
+		book: await getBookByIdServerFn({
+			data: {
+				bookId: params.bookId,
+			},
+		}),
+		session: await getSessionFromMiddlewareFn(),
+	}),
+	head: ({ loaderData }) => ({
+		meta: [{ title: getPageTitle(loaderData?.book?.title) }],
+	}),
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 
@@ -28,14 +40,6 @@ export const Route = createFileRoute("/books/$bookId")({
 			throw redirect({ to: "/pending-approval" });
 		}
 	},
-	loader: async ({ params }) => ({
-		book: await getBookByIdServerFn({
-			data: {
-				bookId: params.bookId,
-			},
-		}),
-		session: await getSessionFromMiddlewareFn(),
-	}),
 	component: BookDetailPage,
 });
 

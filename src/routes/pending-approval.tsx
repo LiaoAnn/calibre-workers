@@ -3,9 +3,13 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { authClient } from "#/lib/auth-client";
+import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 
 export const Route = createFileRoute("/pending-approval")({
+	head: () => ({
+		meta: [{ title: getPageTitle("待審核") }],
+	}),
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 

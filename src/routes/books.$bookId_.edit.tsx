@@ -17,6 +17,7 @@ import {
 	type CoverValidationIssue,
 	validateCoverFile,
 } from "#/lib/cover-validation";
+import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import {
 	searchAuthorsServerFn,
@@ -30,6 +31,19 @@ import { getBookByIdServerFn, updateBookServerFn } from "#/server/books";
 import { uploadBookCoverTempServerFn } from "#/server/files";
 
 export const Route = createFileRoute("/books/$bookId_/edit")({
+	loader: ({ params }) =>
+		getBookByIdServerFn({
+			data: { bookId: params.bookId },
+		}),
+	head: ({ loaderData }) => ({
+		meta: [
+			{
+				title: getPageTitle(
+					loaderData?.title ? `編輯 ${loaderData.title}` : "編輯書籍",
+				),
+			},
+		],
+	}),
 	beforeLoad: async () => {
 		const session = await getSessionFromMiddlewareFn();
 
@@ -41,10 +55,6 @@ export const Route = createFileRoute("/books/$bookId_/edit")({
 			throw redirect({ to: "/pending-approval" });
 		}
 	},
-	loader: ({ params }) =>
-		getBookByIdServerFn({
-			data: { bookId: params.bookId },
-		}),
 	component: EditBookPage,
 });
 

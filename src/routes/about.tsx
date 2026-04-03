@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { getPageTitle } from "#/lib/utils";
 
 export const Route = createFileRoute("/about")({
+	head: () => ({
+		meta: [{ title: getPageTitle("關於") }],
+	}),
 	component: About,
 });
 
