@@ -25,6 +25,7 @@ interface ComboboxProps {
 	options: ComboboxOption[];
 	value: string | string[];
 	onChange: (value: string | string[]) => void;
+	onInputValueChange?: (value: string) => void;
 	placeholder?: string;
 	emptyText?: string;
 	className?: string;
@@ -36,6 +37,7 @@ export function Combobox({
 	options,
 	value,
 	onChange,
+	onInputValueChange,
 	placeholder = "選擇...",
 	emptyText = "沒有找到結果",
 	className,
@@ -55,6 +57,7 @@ export function Combobox({
 				emptyText={emptyText}
 				className={className}
 				disabled={disabled}
+				onInputValueChange={onInputValueChange}
 				inputValue={inputValue}
 				setInputValue={setInputValue}
 				open={open}
@@ -72,6 +75,7 @@ export function Combobox({
 			emptyText={emptyText}
 			className={className}
 			disabled={disabled}
+			onInputValueChange={onInputValueChange}
 			inputValue={inputValue}
 			setInputValue={setInputValue}
 			open={open}
@@ -86,6 +90,7 @@ interface SharedProps {
 	emptyText: string;
 	className?: string;
 	disabled: boolean;
+	onInputValueChange?: (value: string) => void;
 	inputValue: string;
 	setInputValue: (value: string) => void;
 	open: boolean;
@@ -100,11 +105,17 @@ function SingleSelectCombobox({
 	emptyText,
 	className,
 	disabled,
+	onInputValueChange,
 	inputValue,
 	setInputValue,
 	open,
 	setOpen,
 }: SharedProps & { value: string; onChange: (value: string) => void }) {
+	const handleInputValueChange = (nextValue: string) => {
+		setInputValue(nextValue);
+		onInputValueChange?.(nextValue);
+	};
+
 	const selectedOption = options.find((opt) => opt.value === value);
 
 	return (
@@ -133,7 +144,7 @@ function SingleSelectCombobox({
 					<CommandInput
 						placeholder="搜尋..."
 						value={inputValue}
-						onValueChange={setInputValue}
+						onValueChange={handleInputValueChange}
 					/>
 					<CommandList>
 						<CommandEmpty>{emptyText}</CommandEmpty>
@@ -149,7 +160,7 @@ function SingleSelectCombobox({
 										onSelect={(currentValue) => {
 											onChange(currentValue === value ? "" : currentValue);
 											setOpen(false);
-											setInputValue("");
+											handleInputValueChange("");
 										}}
 									>
 										<Check
@@ -177,11 +188,17 @@ function MultiSelectCombobox({
 	emptyText,
 	className,
 	disabled,
+	onInputValueChange,
 	inputValue,
 	setInputValue,
 	open,
 	setOpen,
 }: SharedProps & { value: string[]; onChange: (value: string[]) => void }) {
+	const handleInputValueChange = (nextValue: string) => {
+		setInputValue(nextValue);
+		onInputValueChange?.(nextValue);
+	};
+
 	const handleSelect = (selectedValue: string) => {
 		if (value.includes(selectedValue)) {
 			onChange(value.filter((v) => v !== selectedValue));
@@ -252,7 +269,7 @@ function MultiSelectCombobox({
 					<CommandInput
 						placeholder="搜尋或輸入新值..."
 						value={inputValue}
-						onValueChange={setInputValue}
+						onValueChange={handleInputValueChange}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && inputValue.trim()) {
 								e.preventDefault();
@@ -261,7 +278,7 @@ function MultiSelectCombobox({
 								if (!value.includes(trimmedValue)) {
 									onChange([...value, trimmedValue]);
 								}
-								setInputValue("");
+								handleInputValueChange("");
 							}
 						}}
 					/>
@@ -276,7 +293,7 @@ function MultiSelectCombobox({
 										if (!value.includes(trimmedValue)) {
 											onChange([...value, trimmedValue]);
 										}
-										setInputValue("");
+										handleInputValueChange("");
 									}}
 								>
 									新增「{inputValue.trim()}」

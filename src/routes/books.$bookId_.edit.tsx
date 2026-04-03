@@ -5,7 +5,7 @@ import {
 	redirect,
 	useNavigate,
 } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Combobox } from "#/components/ui/combobox";
@@ -84,6 +84,9 @@ function EditBookPage() {
 			? String(book.seriesIndex)
 			: "",
 	);
+	const [authorSearchInput, setAuthorSearchInput] = useState("");
+	const [debouncedAuthorSearchInput, setDebouncedAuthorSearchInput] =
+		useState("");
 	const [identifiers, setIdentifiers] = useState<IdentifierEntry[]>(
 		book.identifiers.map((i) => ({ type: i.type, value: i.value })),
 	);
@@ -92,11 +95,23 @@ function EditBookPage() {
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setDebouncedAuthorSearchInput(authorSearchInput.trim());
+		}, 300);
+
+		return () => clearTimeout(timer);
+	}, [authorSearchInput]);
+
 	// Autocomplete queries with TanStack Query caching
 	const { data: authorOptions = [] } = useQuery({
-		queryKey: ["autocomplete", "authors"],
+		queryKey: ["autocomplete", "authors", debouncedAuthorSearchInput],
 		queryFn: () =>
-			searchAuthorsServerFn({ data: { query: "" } }).then((results) =>
+			searchAuthorsServerFn({
+				data: {
+					query: debouncedAuthorSearchInput,
+				},
+			}).then((results) =>
 				results.map((name) => ({ value: name, label: name })),
 			),
 		staleTime: 60_000,
@@ -319,6 +334,7 @@ function EditBookPage() {
 							options={authorOptions}
 							value={authorsArray}
 							onChange={(val) => setAuthorsFromArray(val as string[])}
+							onInputValueChange={setAuthorSearchInput}
 							placeholder="選擇或輸入作者..."
 							emptyText="沒有找到作者"
 							multi
