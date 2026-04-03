@@ -7,15 +7,16 @@ import { ConverterContainerContext } from "#/layers/ConverterContainerLayer";
 import { r2Keys } from "#/lib/r2-keys";
 import {
 	getBookMetadataForProcess,
+	getMetadataJob,
+	listBookFilesForMetadataSync,
 	setBookFileMetadataStatus,
+	setBookFilesMetadataStatus,
+	updateMetadataJobStatus,
 } from "#/services/BookService";
 import { getBookFile, uploadBookFile } from "#/services/FileService";
 
 export interface MetadataQueueMessage {
-	bookId: string;
-	fileId: string;
-	r2Key: string;
-	format: BookFileFormat;
+	jobId: string;
 }
 
 const METADATA_MAX_ATTEMPTS = 3;
@@ -39,22 +40,38 @@ function mimeTypeForFormat(format: string) {
 	}
 }
 
-const runMetadataSync = ({
+const runMetadataSyncForFile = ({
 	bookId,
 	fileId,
 	r2Key,
 	format,
-}: MetadataQueueMessage) =>
+	metadataForContainer,
+	cover,
+}: {
+	bookId: string;
+	fileId: string;
+	r2Key: string;
+	format: BookFileFormat;
+	metadataForContainer: {
+		title: string;
+		authors: string[];
+		language?: string;
+		publisher?: string;
+	};
+	cover?: {
+		bytes: ArrayBuffer;
+		contentType?: string;
+	};
+}) =>
 	Effect.gen(function* () {
 		yield* setBookFileMetadataStatus({
 			bookId,
 			fileId,
 			status: "processing",
+			onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
 		});
 
-		const latestMetadata = yield* getBookMetadataForProcess(bookId);
 		const source = yield* getBookFile(r2Key);
-		const { hasCover, ...metadataForContainer } = latestMetadata;
 
 		const bytes = yield* Effect.tryPromise({
 			try: () => source.arrayBuffer(),
@@ -63,24 +80,6 @@ const runMetadataSync = ({
 					`arrayBuffer failed for metadata sync ${fileId}: ${String(cause)}`,
 				),
 		});
-
-		const cover = hasCover
-			? yield* Effect.gen(function* () {
-					const coverObject = yield* getBookFile(r2Keys.bookCover({ bookId }));
-					const coverBytes = yield* Effect.tryPromise({
-						try: () => coverObject.arrayBuffer(),
-						catch: (cause) =>
-							new Error(
-								`arrayBuffer failed for cover sync ${fileId}: ${String(cause)}`,
-							),
-					});
-
-					return {
-						bytes: coverBytes,
-						contentType: coverObject.httpMetadata?.contentType,
-					};
-				})
-			: undefined;
 
 		const container = yield* ConverterContainerContext;
 		const processed = yield* container.process(bytes, {
@@ -103,51 +102,138 @@ const runMetadataSync = ({
 			status: "ready",
 			onlyIfCurrentStatusIn: ["processing"],
 		});
+	}).pipe(
+		Effect.catchAllCause((cause) =>
+			setBookFileMetadataStatus({
+				bookId,
+				fileId,
+				status: "failed",
+				onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
+			}).pipe(
+				Effect.catchAll(() => Effect.void),
+				Effect.zipRight(Effect.failCause(cause)),
+			),
+		),
+	);
+
+const runMetadataSync = (jobId: string) =>
+	Effect.gen(function* () {
+		const job = yield* getMetadataJob(jobId);
+
+		yield* updateMetadataJobStatus(jobId, {
+			status: "processing",
+		});
+
+		const files = yield* listBookFilesForMetadataSync(job.bookId);
+
+		if (files.length === 0) {
+			yield* updateMetadataJobStatus(jobId, {
+				status: "done",
+			});
+			return;
+		}
+
+		yield* setBookFilesMetadataStatus({
+			bookId: job.bookId,
+			fileIds: files.map((file) => file.fileId),
+			status: "processing",
+			onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
+		});
+
+		const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
+		const { hasCover, ...metadataForContainer } = latestMetadata;
+
+		const cover = hasCover
+			? yield* Effect.gen(function* () {
+					const coverObject = yield* getBookFile(
+						r2Keys.bookCover({ bookId: job.bookId }),
+					);
+					const coverBytes = yield* Effect.tryPromise({
+						try: () => coverObject.arrayBuffer(),
+						catch: (cause) =>
+							new Error(
+								`arrayBuffer failed for metadata cover sync ${jobId}: ${String(cause)}`,
+							),
+					});
+
+					return {
+						bytes: coverBytes,
+						contentType: coverObject.httpMetadata?.contentType,
+					};
+				})
+			: undefined;
+
+		const results = yield* Effect.forEach(
+			files,
+			(file) =>
+				runMetadataSyncForFile({
+					bookId: job.bookId,
+					fileId: file.fileId,
+					r2Key: file.r2Key,
+					format: file.format,
+					metadataForContainer,
+					cover,
+				}).pipe(Effect.either),
+			{ concurrency: "unbounded" },
+		);
+
+		const failedCount = results.filter(Either.isLeft).length;
+		if (failedCount > 0) {
+			return yield* Effect.fail(
+				new Error(
+					`Metadata sync failed for ${failedCount} file(s) in job ${jobId}`,
+				),
+			);
+		}
+
+		yield* updateMetadataJobStatus(jobId, {
+			status: "done",
+		});
 	});
 
 const settleMetadataFailure = ({
-	bookId,
-	fileId,
+	jobId,
 	attempts,
 	message,
 	errorMessage,
 }: {
-	bookId: string;
-	fileId: string;
+	jobId: string;
 	attempts: number;
 	message: Message<MetadataQueueMessage>;
 	errorMessage: string;
 }) =>
 	Effect.gen(function* () {
 		const finalAttempt = attempts >= METADATA_MAX_ATTEMPTS;
-		const fallbackStatus: MetadataSyncStatus = finalAttempt
+		const fallbackJobStatus = finalAttempt ? "failed" : "pending";
+		const fallbackFileStatus: MetadataSyncStatus = finalAttempt
 			? "failed"
 			: "pending";
+		const fallbackSourceStatuses: MetadataSyncStatus[] = finalAttempt
+			? ["pending", "processing"]
+			: ["pending", "processing", "failed"];
 
 		yield* Effect.sync(() => {
 			console.error(
-				`Metadata queue failed for file ${fileId} (attempt ${attempts})`,
+				`Metadata queue failed for job ${jobId} (attempt ${attempts})`,
 				errorMessage,
 			);
 		});
 
-		const statusResult = yield* Effect.either(
-			setBookFileMetadataStatus({
-				bookId,
-				fileId,
-				status: fallbackStatus,
-				onlyIfCurrentStatusIn: ["pending", "processing"],
-			}),
-		);
+		yield* updateMetadataJobStatus(jobId, {
+			status: fallbackJobStatus,
+			errorMessage,
+		}).pipe(Effect.catchAll(() => Effect.void));
+
+		const jobResult = yield* Effect.either(getMetadataJob(jobId));
+		if (Either.isRight(jobResult)) {
+			yield* setBookFilesMetadataStatus({
+				bookId: jobResult.right.bookId,
+				status: fallbackFileStatus,
+				onlyIfCurrentStatusIn: fallbackSourceStatuses,
+			}).pipe(Effect.catchAll(() => Effect.void));
+		}
 
 		yield* Effect.sync(() => {
-			if (Either.isLeft(statusResult)) {
-				console.error(
-					`Failed to set metadata status ${fallbackStatus} for ${fileId}`,
-					statusResult.left,
-				);
-			}
-
 			if (finalAttempt) {
 				message.ack();
 				return;
@@ -163,9 +249,9 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 > = async (batch, _env) => {
 	const processMessage = (message: Message<MetadataQueueMessage>) =>
 		Effect.gen(function* () {
-			const payload = message.body;
+			const { jobId } = message.body;
 			const exit = yield* Effect.exit(
-				runMetadataSync(payload).pipe(Effect.timeout(METADATA_TASK_TIMEOUT)),
+				runMetadataSync(jobId).pipe(Effect.timeout(METADATA_TASK_TIMEOUT)),
 			);
 
 			if (Exit.isSuccess(exit)) {
@@ -174,8 +260,7 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 			}
 
 			yield* settleMetadataFailure({
-				bookId: payload.bookId,
-				fileId: payload.fileId,
+				jobId,
 				attempts: message.attempts,
 				message,
 				errorMessage: Cause.pretty(exit.cause),
@@ -183,9 +268,9 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 		}).pipe(
 			Effect.catchAllCause((cause) =>
 				Effect.sync(() => {
-					const payload = message.body;
+					const { jobId } = message.body;
 					console.error(
-						`Unexpected metadata queue failure for file ${payload.fileId} (attempt ${message.attempts})`,
+						`Unexpected metadata queue failure for job ${jobId} (attempt ${message.attempts})`,
 						Cause.pretty(cause),
 					);
 

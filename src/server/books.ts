@@ -7,12 +7,14 @@ import { r2Keys } from "#/lib/r2-keys";
 import { requiredSessionMiddleware } from "#/middleware/auth";
 import type { MetadataQueueMessage } from "#/queue";
 import {
+	createMetadataJob,
 	getBookById,
 	listBookFilesForMetadataSync,
 	listBooks,
 	setBookFilesMetadataStatus,
 	type UpdateBookInput,
 	updateBook,
+	updateMetadataJobStatus,
 } from "#/services/BookService";
 import {
 	deleteBookFile,
@@ -67,10 +69,11 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 export const updateBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: UpdateBookServerInput) => input)
-	.handler(async ({ data }) => {
+	.handler(async ({ data, context }) => {
 		const { coverTempR2Key, ...bookInput } = data;
+		const userId = context.session.user.id;
 
-		const files = await Effect.runPromise(
+		const { files, metadataJobId } = await Effect.runPromise(
 			Effect.gen(function* () {
 				if (coverTempR2Key) {
 					const tempCoverObject = yield* getBookFile(coverTempR2Key);
@@ -90,6 +93,7 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 					hasCover: coverTempR2Key ? true : undefined,
 				});
 				const files = yield* listBookFilesForMetadataSync(data.bookId);
+				let metadataJobId: string | undefined;
 
 				if (files.length > 0) {
 					yield* setBookFilesMetadataStatus({
@@ -97,9 +101,15 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 						fileIds: files.map((file) => file.fileId),
 						status: "pending",
 					});
+
+					const job = yield* createMetadataJob({
+						bookId: data.bookId,
+						userId,
+					});
+					metadataJobId = job.jobId;
 				}
 
-				return files;
+				return { files, metadataJobId };
 			}).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
@@ -108,29 +118,35 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 			),
 		);
 
-		if (files.length > 0) {
-			const messages = files.map((file) => ({
-				body: {
-					bookId: file.bookId,
-					fileId: file.fileId,
-					r2Key: file.r2Key,
-					format: file.format,
-				} satisfies MetadataQueueMessage,
-			}));
-
+		if (files.length > 0 && metadataJobId) {
 			try {
-				await env.METADATA_QUEUE.sendBatch(messages);
+				await env.METADATA_QUEUE.send({
+					jobId: metadataJobId,
+				} satisfies MetadataQueueMessage);
 			} catch (error) {
 				await Effect.runPromise(
-					setBookFilesMetadataStatus({
-						bookId: data.bookId,
-						fileIds: files.map((file) => file.fileId),
-						status: "failed",
-					}).pipe(Effect.provide(AppLayer)),
+					Effect.all(
+						[
+							setBookFilesMetadataStatus({
+								bookId: data.bookId,
+								fileIds: files.map((file) => file.fileId),
+								status: "failed",
+								onlyIfCurrentStatusIn: ["pending", "processing"],
+							}),
+							updateMetadataJobStatus(metadataJobId, {
+								status: "failed",
+								errorMessage: "Failed to enqueue metadata synchronization job",
+							}),
+						],
+						{ discard: true },
+					).pipe(Effect.provide(AppLayer)),
 				);
 				throw error;
 			}
 		}
 
-		return { queuedFileCount: files.length };
+		return {
+			queuedFileCount: files.length,
+			metadataJobId: metadataJobId ?? null,
+		};
 	});

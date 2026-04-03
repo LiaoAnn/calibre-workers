@@ -269,6 +269,7 @@ export const booksRelations = relations(books, ({ one, many }) => ({
 	comments: many(comments),
 	files: many(bookFiles),
 	conversionJobs: many(conversionJobs),
+	metadataJobs: many(metadataJobs),
 }));
 
 export const tagsRelations = relations(tags, ({ many }) => ({
@@ -317,6 +318,8 @@ export const bookFilesRelations = relations(bookFiles, ({ one }) => ({
 
 export type ConversionJobStatus = "pending" | "processing" | "done" | "failed";
 
+export type MetadataJobStatus = "pending" | "processing" | "done" | "failed";
+
 export const conversionJobs = sqliteTable(
 	"conversion_jobs",
 	{
@@ -352,6 +355,38 @@ export const conversionJobs = sqliteTable(
 	],
 );
 
+export const metadataJobs = sqliteTable(
+	"metadata_jobs",
+	{
+		id: text("id").primaryKey(),
+		bookId: text("book_id")
+			.notNull()
+			.references(() => books.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		status: text("status")
+			.$type<MetadataJobStatus>()
+			.notNull()
+			.default("pending"),
+		errorMessage: text("error_message"),
+		readAt: integer("read_at", { mode: "timestamp_ms" }),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("metadata_jobs_book_idx").on(table.bookId),
+		index("metadata_jobs_user_idx").on(table.userId),
+		index("metadata_jobs_status_idx").on(table.status),
+		index("metadata_jobs_updated_idx").on(table.updatedAt),
+	],
+);
+
 export const conversionJobsRelations = relations(conversionJobs, ({ one }) => ({
 	book: one(books, {
 		fields: [conversionJobs.bookId],
@@ -366,6 +401,17 @@ export const conversionJobsRelations = relations(conversionJobs, ({ one }) => ({
 		fields: [conversionJobs.resultFileId],
 		references: [bookFiles.id],
 		relationName: "resultFile",
+	}),
+}));
+
+export const metadataJobsRelations = relations(metadataJobs, ({ one }) => ({
+	book: one(books, {
+		fields: [metadataJobs.bookId],
+		references: [books.id],
+	}),
+	user: one(user, {
+		fields: [metadataJobs.userId],
+		references: [user.id],
 	}),
 }));
 

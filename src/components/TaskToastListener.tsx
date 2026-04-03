@@ -4,6 +4,28 @@ import { toast } from "sonner";
 import { useNotificationTasks } from "#/hooks/useNotificationTasks";
 import type { Task } from "#/server/tasks";
 
+function getSuccessToastTitle(type: Task["type"]) {
+	switch (type) {
+		case "conversion":
+			return "轉換完成";
+		case "metadata":
+			return "Metadata 更新完成";
+		case "upload":
+			return "上傳完成";
+	}
+}
+
+function getFailureToastTitle(type: Task["type"]) {
+	switch (type) {
+		case "conversion":
+			return "轉換失敗";
+		case "metadata":
+			return "Metadata 更新失敗";
+		case "upload":
+			return "上傳失敗";
+	}
+}
+
 export function TaskToastListener() {
 	const { data: tasks = [], isLoading } = useNotificationTasks();
 	const prevTasksRef = useRef<Task[]>([]);
@@ -60,11 +82,10 @@ export function TaskToastListener() {
 			}
 
 			if (justSucceeded) {
-				const isConversion = task.type === "conversion";
 				toast.success(
 					<div className="flex flex-col gap-1">
 						<span className="font-medium">
-							{isConversion ? "轉換完成" : "上傳完成"}
+							{getSuccessToastTitle(task.type)}
 						</span>
 						<span className="text-sm text-muted-foreground line-clamp-2">
 							{task.fileName}
@@ -88,11 +109,10 @@ export function TaskToastListener() {
 			}
 
 			if (justFailed) {
-				const isConversion = task.type === "conversion";
 				toast.error(
 					<div className="flex flex-col gap-1">
 						<span className="font-medium">
-							{isConversion ? "轉換失敗" : "上傳失敗"}
+							{getFailureToastTitle(task.type)}
 						</span>
 						<span className="text-sm text-muted-foreground">
 							{task.fileName}

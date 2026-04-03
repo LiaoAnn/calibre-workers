@@ -8,6 +8,7 @@ import {
 	conversionQueryKeys,
 	useConversionTasks,
 } from "#/hooks/useConversionTasks";
+import { metadataQueryKeys, useMetadataTasks } from "#/hooks/useMetadataTasks";
 import { useUploadQueue } from "#/hooks/useUploadQueue";
 import {
 	getUploadTasksServerFn,
@@ -34,6 +35,10 @@ export function useNotificationTasks(limit = 10) {
 	});
 	const { tasks: conversionTasks, isLoading: isConversionLoading } =
 		useConversionTasks({
+			limit,
+		});
+	const { tasks: metadataTasks, isLoading: isMetadataLoading } =
+		useMetadataTasks({
 			limit,
 		});
 	const { queuedItems, uploadingItem, totalQueueLength } = useUploadQueue();
@@ -84,13 +89,15 @@ export function useNotificationTasks(limit = 10) {
 		...localQueueTasks,
 		...uploadTasks,
 		...conversionTasks,
+		...metadataTasks,
 	].sort((a, b) => b.updatedAt - a.updatedAt);
 	const unreadTasks = mergedTasks.filter((task) => !task.readAt);
 
 	return {
 		data: unreadTasks,
 		allTasks: mergedTasks,
-		isLoading: uploadQuery.isLoading || isConversionLoading,
+		isLoading:
+			uploadQuery.isLoading || isConversionLoading || isMetadataLoading,
 	};
 }
 
@@ -155,6 +162,9 @@ export function useMarkNotificationTaskAsReadMutation() {
 			});
 			queryClient.invalidateQueries({
 				queryKey: conversionQueryKeys.all,
+			});
+			queryClient.invalidateQueries({
+				queryKey: metadataQueryKeys.all,
 			});
 		},
 	});
@@ -244,6 +254,9 @@ export function useMarkAllNotificationsAsReadMutation() {
 			});
 			queryClient.invalidateQueries({
 				queryKey: conversionQueryKeys.all,
+			});
+			queryClient.invalidateQueries({
+				queryKey: metadataQueryKeys.all,
 			});
 		},
 	});

@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 import { BookNotFound } from "#/lib/errors";
@@ -21,6 +21,12 @@ interface MetadataSyncFile {
 	r2Key: string;
 	format: schema.BookFileFormat;
 }
+
+export class MetadataJobNotFound extends Data.TaggedError(
+	"MetadataJobNotFound",
+)<{
+	readonly jobId: string;
+}> {}
 
 const toBookFileFormat = (value?: string): schema.BookFileFormat => {
 	switch ((value ?? "").toLowerCase()) {
@@ -228,10 +234,12 @@ export const setBookFilesMetadataStatus = ({
 	bookId,
 	fileIds,
 	status,
+	onlyIfCurrentStatusIn,
 }: {
 	bookId: string;
 	fileIds?: string[];
 	status: schema.MetadataSyncStatus;
+	onlyIfCurrentStatusIn?: schema.MetadataSyncStatus[];
 }) =>
 	Effect.gen(function* () {
 		if (fileIds && fileIds.length === 0) {
@@ -239,12 +247,19 @@ export const setBookFilesMetadataStatus = ({
 		}
 
 		const database = yield* DatabaseContext;
-		const whereClause = fileIds
+		const baseWhereClause = fileIds
 			? and(
 					eq(schema.bookFiles.bookId, bookId),
 					inArray(schema.bookFiles.id, fileIds),
 				)
 			: eq(schema.bookFiles.bookId, bookId);
+		const whereClause =
+			onlyIfCurrentStatusIn && onlyIfCurrentStatusIn.length > 0
+				? and(
+						baseWhereClause,
+						inArray(schema.bookFiles.metadataStatus, onlyIfCurrentStatusIn),
+					)
+				: baseWhereClause;
 
 		yield* database
 			.update(schema.bookFiles)
@@ -283,36 +298,135 @@ export const setBookFileMetadataStatus = ({
 			.where(whereClause);
 	});
 
-export const failStaleMetadataTasks = ({
-	staleBookLastModifiedBefore,
+export const createMetadataJob = ({
+	bookId,
+	userId,
 }: {
-	staleBookLastModifiedBefore: Date;
+	bookId: string;
+	userId: string;
 }) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
-		const staleFiles = yield* database
-			.select({ id: schema.bookFiles.id })
-			.from(schema.bookFiles)
-			.innerJoin(schema.books, eq(schema.bookFiles.bookId, schema.books.id))
+		const id = crypto.randomUUID();
+
+		yield* database.insert(schema.metadataJobs).values({
+			id,
+			bookId,
+			userId,
+			status: "pending",
+		});
+
+		return { jobId: id };
+	});
+
+export const getMetadataJob = (jobId: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+
+		const rows = yield* database
+			.select()
+			.from(schema.metadataJobs)
+			.where(eq(schema.metadataJobs.id, jobId))
+			.limit(1);
+
+		const job = rows[0];
+		if (!job) {
+			return yield* Effect.fail(new MetadataJobNotFound({ jobId }));
+		}
+
+		return job;
+	});
+
+export const updateMetadataJobStatus = (
+	jobId: string,
+	update: {
+		status: schema.MetadataJobStatus;
+		errorMessage?: string;
+	},
+) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+
+		yield* database
+			.update(schema.metadataJobs)
+			.set({
+				status: update.status,
+				errorMessage: update.errorMessage ?? null,
+			})
+			.where(eq(schema.metadataJobs.id, jobId));
+	});
+
+export const failStaleMetadataTasks = ({
+	staleBefore,
+	errorMessage,
+}: {
+	staleBefore: Date;
+	errorMessage: string;
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const staleJobs = yield* database
+			.select({
+				id: schema.metadataJobs.id,
+				bookId: schema.metadataJobs.bookId,
+			})
+			.from(schema.metadataJobs)
 			.where(
 				and(
-					inArray(schema.bookFiles.metadataStatus, ["pending", "processing"]),
-					lt(schema.books.lastModified, staleBookLastModifiedBefore),
+					inArray(schema.metadataJobs.status, ["pending", "processing"]),
+					lt(schema.metadataJobs.updatedAt, staleBefore),
 				),
 			);
 
-		if (staleFiles.length === 0) {
+		if (staleJobs.length === 0) {
 			return { affectedCount: 0 };
 		}
 
-		const staleFileIds = staleFiles.map((file) => file.id);
+		const staleJobIds = staleJobs.map((job) => job.id);
+		const staleBookIds = [...new Set(staleJobs.map((job) => job.bookId))];
 
 		yield* database
-			.update(schema.bookFiles)
-			.set({ metadataStatus: "failed" })
-			.where(inArray(schema.bookFiles.id, staleFileIds));
+			.update(schema.metadataJobs)
+			.set({
+				status: "failed",
+				errorMessage,
+				updatedAt: new Date(),
+			})
+			.where(inArray(schema.metadataJobs.id, staleJobIds));
 
-		return { affectedCount: staleFileIds.length };
+		if (staleBookIds.length > 0) {
+			const hasActiveJobs = yield* database
+				.select({ bookId: schema.metadataJobs.bookId })
+				.from(schema.metadataJobs)
+				.where(
+					and(
+						inArray(schema.metadataJobs.bookId, staleBookIds),
+						inArray(schema.metadataJobs.status, ["pending", "processing"]),
+					),
+				);
+
+			const activeBookIdSet = new Set(hasActiveJobs.map((row) => row.bookId));
+			const staleOnlyBookIds = staleBookIds.filter(
+				(bookId) => !activeBookIdSet.has(bookId),
+			);
+
+			if (staleOnlyBookIds.length > 0) {
+				yield* database
+					.update(schema.bookFiles)
+					.set({ metadataStatus: "failed" })
+					.where(
+						and(
+							inArray(schema.bookFiles.bookId, staleOnlyBookIds),
+							inArray(schema.bookFiles.metadataStatus, [
+								"pending",
+								"processing",
+							]),
+						),
+					);
+			}
+		}
+
+		return { affectedCount: staleJobIds.length };
 	});
 
 // ---------------------------------------------------------------------------

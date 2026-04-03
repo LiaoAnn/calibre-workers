@@ -6,7 +6,7 @@ import { AppLayer } from "#/layers/AppLayer";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 import { requiredSessionMiddleware } from "#/middleware/auth";
 
-type TaskType = "upload" | "conversion";
+type TaskType = "upload" | "conversion" | "metadata";
 export type TaskStatus = "pending" | "processing" | "success" | "failed";
 
 export interface Task {
@@ -103,6 +103,48 @@ export const getConversionTasksServerFn = createServerFn({
 		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
 	});
 
+export const getMetadataTasksServerFn = createServerFn({
+	method: "GET",
+})
+	.middleware([requiredSessionMiddleware])
+	.inputValidator((input: GetTasksInput) => input)
+	.handler(async ({ data, context }) => {
+		const limit = data.limit ?? 50;
+		const userId = context.session.user.id;
+
+		const runnable = Effect.gen(function* () {
+			const database = yield* DatabaseContext;
+
+			const metadataJobs = yield* database.query.metadataJobs.findMany({
+				where: eq(schema.metadataJobs.userId, userId),
+				with: {
+					book: true,
+				},
+				orderBy: desc(schema.metadataJobs.updatedAt),
+				limit,
+			});
+
+			return metadataJobs.map(
+				(job): Task => ({
+					id: job.id,
+					type: "metadata",
+					bookId: job.bookId,
+					fileName: job.book
+						? `Metadata: ${job.book.title}`
+						: "Metadata update",
+					status:
+						job.status === "done" ? "success" : (job.status as TaskStatus),
+					errorMessage: job.errorMessage ?? undefined,
+					readAt: job.readAt?.getTime() ?? null,
+					createdAt: job.createdAt.getTime(),
+					updatedAt: job.updatedAt.getTime(),
+				}),
+			);
+		});
+
+		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+	});
+
 interface MarkTaskAsReadInput {
 	taskId: string;
 	taskType: TaskType;
@@ -132,6 +174,16 @@ export const markTaskAsReadServerFn = createServerFn({ method: "POST" })
 					.update(schema.conversionJobs)
 					.set({ readAt: new Date() })
 					.where(eq(schema.conversionJobs.id, data.taskId));
+			} else if (data.taskType === "metadata") {
+				yield* database
+					.update(schema.metadataJobs)
+					.set({ readAt: new Date() })
+					.where(
+						and(
+							eq(schema.metadataJobs.id, data.taskId),
+							eq(schema.metadataJobs.userId, userId),
+						),
+					);
 			}
 
 			return { success: true };
@@ -158,6 +210,9 @@ export const markTasksAsReadServerFn = createServerFn({ method: "POST" })
 			const conversionIds = data.taskIds
 				.filter((t) => t.type === "conversion")
 				.map((t) => t.id);
+			const metadataIds = data.taskIds
+				.filter((t) => t.type === "metadata")
+				.map((t) => t.id);
 
 			const now = new Date();
 
@@ -178,6 +233,18 @@ export const markTasksAsReadServerFn = createServerFn({ method: "POST" })
 					.update(schema.conversionJobs)
 					.set({ readAt: now })
 					.where(inArray(schema.conversionJobs.id, conversionIds));
+			}
+
+			if (metadataIds.length > 0) {
+				yield* database
+					.update(schema.metadataJobs)
+					.set({ readAt: now })
+					.where(
+						and(
+							inArray(schema.metadataJobs.id, metadataIds),
+							eq(schema.metadataJobs.userId, userId),
+						),
+					);
 			}
 
 			return { success: true };

@@ -8,6 +8,8 @@ import { failStaleConversionJobs } from "#/services/ConversionService";
 const STALE_TASK_WINDOW = Duration.minutes(45);
 const STALE_CONVERSION_ERROR_MESSAGE =
 	"Marked as failed by scheduled stale-task sweeper";
+const STALE_METADATA_ERROR_MESSAGE =
+	"Marked as failed by scheduled stale-task sweeper";
 
 export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 	controller,
@@ -26,7 +28,8 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 					errorMessage: STALE_CONVERSION_ERROR_MESSAGE,
 				}),
 				failStaleMetadataTasks({
-					staleBookLastModifiedBefore: staleBefore,
+					staleBefore,
+					errorMessage: STALE_METADATA_ERROR_MESSAGE,
 				}),
 			],
 			{ concurrency: "unbounded" },

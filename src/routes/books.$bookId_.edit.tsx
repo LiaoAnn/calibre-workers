@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	Link,
@@ -12,6 +12,7 @@ import { Combobox } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
+import { metadataQueryKeys } from "#/hooks/useMetadataTasks";
 import {
 	COVER_ACCEPT_MIME_TYPES,
 	type CoverValidationIssue,
@@ -75,6 +76,7 @@ function EditBookPage() {
 	const book = Route.useLoaderData();
 	const { bookId } = Route.useParams();
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 
 	const [title, setTitle] = useState(book.title);
 	// Authors stored as comma-separated string in the database
@@ -237,7 +239,7 @@ function EditBookPage() {
 				coverTempR2Key = uploadResult.tempR2Key;
 			}
 
-			await updateBookServerFn({
+			const result = await updateBookServerFn({
 				data: {
 					bookId,
 					title: title.trim() || book.title,
@@ -265,6 +267,14 @@ function EditBookPage() {
 					coverTempR2Key,
 				},
 			});
+
+			// re-fetch metadata jobs to update the list if a new metadata job was created
+			if (result.metadataJobId) {
+				await queryClient.invalidateQueries({
+					queryKey: metadataQueryKeys.all,
+				});
+			}
+
 			navigate({ to: "/books/$bookId", params: { bookId } });
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "儲存失敗，請稍後再試");

@@ -42,7 +42,11 @@ function getStatusText(status: TaskStatus, type?: Task["type"]) {
 		case "processing":
 			return "處理中";
 		case "success":
-			return type === "conversion" ? "轉換完成" : "上傳完成";
+			return type === "conversion"
+				? "轉換完成"
+				: type === "metadata"
+					? "Metadata 更新完成"
+					: "上傳完成";
 		case "failed":
 			return "失敗";
 	}
