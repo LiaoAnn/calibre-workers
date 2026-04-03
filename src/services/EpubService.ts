@@ -241,11 +241,11 @@ function normalizeZipPath(path: string): string {
 
 function resolveEntryData(
 	entries: Record<string, Uint8Array>,
-	opfDir: string,
+	baseDir: string,
 	href: string,
 ): Uint8Array | undefined {
 	const decodedHref = decodeURIComponent(href.trim());
-	const candidate = normalizeZipPath(`${opfDir}${decodedHref}`);
+	const candidate = normalizeZipPath(`${baseDir}${decodedHref}`);
 	const noDotPrefix = candidate.replace(/^\.\//, "");
 
 	return (
@@ -253,6 +253,63 @@ function resolveEntryData(
 		entries[noDotPrefix] ??
 		entries[decodeURIComponent(candidate)]
 	);
+}
+
+function normalizeEntryPath(baseDir: string, href: string): string {
+	const decodedHref = decodeURIComponent(href.trim());
+	return normalizeZipPath(`${baseDir}${decodedHref}`);
+}
+
+function inferCoverMimeTypeFromPath(path: string): string {
+	const normalizedPath = path.toLowerCase();
+
+	if (normalizedPath.endsWith(".png")) return "image/png";
+	if (normalizedPath.endsWith(".gif")) return "image/gif";
+	if (normalizedPath.endsWith(".webp")) return "image/webp";
+	if (normalizedPath.endsWith(".svg")) return "image/svg+xml";
+	return "image/jpeg";
+}
+
+function isContentDocumentReference(path: string, mimeType?: string): boolean {
+	const normalizedMimeType = (mimeType ?? "").toLowerCase();
+	const normalizedPath = path.toLowerCase();
+
+	if (normalizedMimeType.startsWith("image/")) {
+		return false;
+	}
+
+	return (
+		normalizedMimeType.includes("xhtml") ||
+		normalizedMimeType.includes("html") ||
+		normalizedPath.endsWith(".xhtml") ||
+		normalizedPath.endsWith(".html") ||
+		normalizedPath.endsWith(".htm")
+	);
+}
+
+function extractImageHrefFromContentDocument(
+	markup: string,
+): string | undefined {
+	const imageTags = markup.match(/<(?:img|image)\b[^>]*>/gi) ?? [];
+
+	for (const tag of imageTags) {
+		const href =
+			getXmlAttr(tag, "src") ??
+			getXmlAttr(tag, "href") ??
+			getXmlAttr(tag, "xlink:href");
+		const normalizedHref = href?.trim();
+
+		if (
+			normalizedHref &&
+			normalizedHref.length > 0 &&
+			!normalizedHref.startsWith("data:") &&
+			!/^https?:\/\//i.test(normalizedHref)
+		) {
+			return normalizedHref;
+		}
+	}
+
+	return undefined;
 }
 
 export const parseEpubCover = (buffer: ArrayBuffer) =>
@@ -272,28 +329,44 @@ export const parseEpubCover = (buffer: ArrayBuffer) =>
 			let coverHref: string | undefined;
 			let coverMimeType: string | undefined;
 			const itemTags = opfXml.match(/<item\b[^>]*>/gi) ?? [];
+			const manifestItems = itemTags
+				.map((tag) => ({
+					id: getXmlAttr(tag, "id"),
+					href: getXmlAttr(tag, "href"),
+					mediaType: getXmlAttr(tag, "media-type"),
+					properties: getXmlAttr(tag, "properties"),
+				}))
+				.filter((item) => !!item.href);
+
+			const findManifestItemByHref = (href: string, baseDir = opfDir) => {
+				const targetPath = normalizeEntryPath(baseDir, href);
+				return manifestItems.find((item) => {
+					if (!item.href) return false;
+					return normalizeEntryPath(opfDir, item.href) === targetPath;
+				});
+			};
 
 			// EPUB 3: <item properties="cover-image" .../>
-			const epub3Item = itemTags.find((tag) => {
-				const properties = getXmlAttr(tag, "properties");
+			const epub3Item = manifestItems.find((item) => {
+				const properties = item.properties;
 				return properties
 					? properties.split(/\s+/).includes("cover-image")
 					: false;
 			});
 			if (epub3Item) {
-				coverHref = getXmlAttr(epub3Item, "href");
-				coverMimeType = getXmlAttr(epub3Item, "media-type");
+				coverHref = epub3Item.href;
+				coverMimeType = epub3Item.mediaType;
 			}
 
 			// EPUB 2/3: <item id="cover-image|cover" .../>
 			if (!coverHref) {
-				const idItem = itemTags.find((tag) => {
-					const id = getXmlAttr(tag, "id")?.toLowerCase();
+				const idItem = manifestItems.find((item) => {
+					const id = item.id?.toLowerCase();
 					return id === "cover-image" || id === "cover";
 				});
 				if (idItem) {
-					coverHref = getXmlAttr(idItem, "href");
-					coverMimeType = getXmlAttr(idItem, "media-type");
+					coverHref = idItem.href;
+					coverMimeType = idItem.mediaType;
 				}
 			}
 
@@ -308,34 +381,96 @@ export const parseEpubCover = (buffer: ArrayBuffer) =>
 					: undefined;
 
 				if (coverId) {
-					const item = itemTags.find(
-						(tag) =>
-							getXmlAttr(tag, "id")?.toLowerCase() === coverId.toLowerCase(),
+					const item = manifestItems.find(
+						(item) => item.id?.toLowerCase() === coverId.toLowerCase(),
 					);
 					if (item) {
-						coverHref = getXmlAttr(item, "href");
-						coverMimeType = getXmlAttr(item, "media-type");
+						coverHref = item.href;
+						coverMimeType = item.mediaType;
 					}
+				}
+			}
+
+			// EPUB 2 guide: <reference type="cover" href="..."/>
+			if (!coverHref) {
+				const guideReferenceTags = opfXml.match(/<reference\b[^>]*>/gi) ?? [];
+				const coverReference = guideReferenceTags.find((tag) =>
+					(getXmlAttr(tag, "type") ?? "").toLowerCase().includes("cover"),
+				);
+
+				if (coverReference) {
+					coverHref = getXmlAttr(coverReference, "href");
+					const guideManifestItem = coverHref
+						? findManifestItemByHref(coverHref)
+						: undefined;
+					coverMimeType = guideManifestItem?.mediaType;
+				}
+			}
+
+			// Heuristic fallback: image entry whose id/href includes "cover".
+			if (!coverHref) {
+				const manifestCoverItem = manifestItems.find((item) => {
+					const id = (item.id ?? "").toLowerCase();
+					const href = (item.href ?? "").toLowerCase();
+					const mediaType = (item.mediaType ?? "").toLowerCase();
+
+					return (
+						mediaType.startsWith("image/") &&
+						(id.includes("cover") || href.includes("cover"))
+					);
+				});
+
+				if (manifestCoverItem) {
+					coverHref = manifestCoverItem.href;
+					coverMimeType = manifestCoverItem.mediaType;
 				}
 			}
 
 			if (!coverHref) return undefined;
 
-			const data = resolveEntryData(entries, opfDir, coverHref);
-			if (!data) return undefined;
+			let currentHref = coverHref;
+			let currentBaseDir = opfDir;
+			let currentMimeType = coverMimeType;
 
-			const normalizedHref = coverHref.toLowerCase();
-			const mimeType =
-				coverMimeType ??
-				(normalizedHref.endsWith(".png")
-					? "image/png"
-					: normalizedHref.endsWith(".gif")
-						? "image/gif"
-						: normalizedHref.endsWith(".webp")
-							? "image/webp"
-							: "image/jpeg");
+			for (let depth = 0; depth < 3; depth++) {
+				const resolvedPath = normalizeEntryPath(currentBaseDir, currentHref);
+				const data = resolveEntryData(entries, currentBaseDir, currentHref);
+				if (!data) return undefined;
 
-			return { data, mimeType };
+				const manifestItem = findManifestItemByHref(
+					currentHref,
+					currentBaseDir,
+				);
+				const resolvedMimeType =
+					currentMimeType ??
+					manifestItem?.mediaType ??
+					inferCoverMimeTypeFromPath(resolvedPath);
+
+				if (!isContentDocumentReference(resolvedPath, resolvedMimeType)) {
+					const finalMimeType = resolvedMimeType
+						.toLowerCase()
+						.startsWith("image/")
+						? resolvedMimeType
+						: inferCoverMimeTypeFromPath(resolvedPath);
+					return { data, mimeType: finalMimeType };
+				}
+
+				const contentDocMarkup = strFromU8(data);
+				const embeddedCoverHref =
+					extractImageHrefFromContentDocument(contentDocMarkup);
+				if (!embeddedCoverHref) return undefined;
+
+				currentBaseDir = resolvedPath.includes("/")
+					? resolvedPath.substring(0, resolvedPath.lastIndexOf("/") + 1)
+					: "";
+				currentHref = embeddedCoverHref;
+				currentMimeType = findManifestItemByHref(
+					embeddedCoverHref,
+					currentBaseDir,
+				)?.mediaType;
+			}
+
+			return undefined;
 		},
 		catch: (cause) =>
 			new ParseError({
