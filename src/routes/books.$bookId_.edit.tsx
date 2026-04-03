@@ -104,18 +104,19 @@ function EditBookPage() {
 	}, [authorSearchInput]);
 
 	// Autocomplete queries with TanStack Query caching
-	const { data: authorOptions = [] } = useQuery({
-		queryKey: ["autocomplete", "authors", debouncedAuthorSearchInput],
-		queryFn: () =>
-			searchAuthorsServerFn({
-				data: {
-					query: debouncedAuthorSearchInput,
-				},
-			}).then((results) =>
-				results.map((name) => ({ value: name, label: name })),
-			),
-		staleTime: 60_000,
-	});
+	const { data: authorOptions = [], isFetching: isFetchingAuthorOptions } =
+		useQuery({
+			queryKey: ["autocomplete", "authors", debouncedAuthorSearchInput],
+			queryFn: () =>
+				searchAuthorsServerFn({
+					data: {
+						query: debouncedAuthorSearchInput,
+					},
+				}).then((results) =>
+					results.map((name) => ({ value: name, label: name })),
+				),
+			staleTime: 60_000,
+		});
 
 	const { data: tagOptions = [] } = useQuery({
 		queryKey: ["autocomplete", "tags"],
@@ -335,6 +336,7 @@ function EditBookPage() {
 							value={authorsArray}
 							onChange={(val) => setAuthorsFromArray(val as string[])}
 							onInputValueChange={setAuthorSearchInput}
+							loading={isFetchingAuthorOptions}
 							placeholder="選擇或輸入作者..."
 							emptyText="沒有找到作者"
 							multi

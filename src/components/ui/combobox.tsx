@@ -1,4 +1,4 @@
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, X } from "lucide-react";
 import * as React from "react";
 import { Button } from "#/components/ui/button";
 import {
@@ -8,6 +8,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
+	CommandLoading,
 } from "#/components/ui/command";
 import {
 	Popover,
@@ -26,6 +27,7 @@ interface ComboboxProps {
 	value: string | string[];
 	onChange: (value: string | string[]) => void;
 	onInputValueChange?: (value: string) => void;
+	loading?: boolean;
 	placeholder?: string;
 	emptyText?: string;
 	className?: string;
@@ -33,11 +35,41 @@ interface ComboboxProps {
 	multi?: boolean;
 }
 
+const normalizeText = (text: string) => text.trim().toLowerCase();
+
+const optionMatchesQuery = (
+	option: ComboboxOption,
+	normalizedQuery: string,
+) => {
+	if (!normalizedQuery) {
+		return true;
+	}
+
+	return (
+		normalizeText(option.label).includes(normalizedQuery) ||
+		normalizeText(option.value).includes(normalizedQuery)
+	);
+};
+
+const hasExactOptionMatch = (options: ComboboxOption[], input: string) => {
+	const normalizedInput = normalizeText(input);
+	if (!normalizedInput) {
+		return false;
+	}
+
+	return options.some(
+		(option) =>
+			normalizeText(option.label) === normalizedInput ||
+			normalizeText(option.value) === normalizedInput,
+	);
+};
+
 export function Combobox({
 	options,
 	value,
 	onChange,
 	onInputValueChange,
+	loading = false,
 	placeholder = "選擇...",
 	emptyText = "沒有找到結果",
 	className,
@@ -58,6 +90,7 @@ export function Combobox({
 				className={className}
 				disabled={disabled}
 				onInputValueChange={onInputValueChange}
+				loading={loading}
 				inputValue={inputValue}
 				setInputValue={setInputValue}
 				open={open}
@@ -76,6 +109,7 @@ export function Combobox({
 			className={className}
 			disabled={disabled}
 			onInputValueChange={onInputValueChange}
+			loading={loading}
 			inputValue={inputValue}
 			setInputValue={setInputValue}
 			open={open}
@@ -91,6 +125,7 @@ interface SharedProps {
 	className?: string;
 	disabled: boolean;
 	onInputValueChange?: (value: string) => void;
+	loading: boolean;
 	inputValue: string;
 	setInputValue: (value: string) => void;
 	open: boolean;
@@ -106,6 +141,7 @@ function SingleSelectCombobox({
 	className,
 	disabled,
 	onInputValueChange,
+	loading,
 	inputValue,
 	setInputValue,
 	open,
@@ -117,6 +153,26 @@ function SingleSelectCombobox({
 	};
 
 	const selectedOption = options.find((opt) => opt.value === value);
+	const trimmedInput = inputValue.trim();
+	const normalizedQuery = normalizeText(inputValue);
+	const hasExactMatch = hasExactOptionMatch(options, trimmedInput);
+	const inputMatchesCurrentValue =
+		normalizeText(value) === normalizeText(trimmedInput);
+	const canCreateInput =
+		trimmedInput.length > 0 && !hasExactMatch && !inputMatchesCurrentValue;
+	const filteredOptions = options.filter((opt) =>
+		optionMatchesQuery(opt, normalizedQuery),
+	);
+
+	const handleCreateInput = () => {
+		if (!canCreateInput) {
+			return;
+		}
+
+		onChange(trimmedInput);
+		setOpen(false);
+		handleInputValueChange("");
+	};
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -127,12 +183,14 @@ function SingleSelectCombobox({
 					aria-expanded={open}
 					disabled={disabled}
 					className={cn(
-						"w-full justify-between font-normal",
+						"w-full justify-between gap-2 overflow-hidden font-normal",
 						!selectedOption && "text-muted-foreground",
 						className,
 					)}
 				>
-					{selectedOption ? selectedOption.label : placeholder}
+					<span className="min-w-0 flex-1 truncate text-left">
+						{selectedOption ? selectedOption.label : placeholder}
+					</span>
 					<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
 				</Button>
 			</PopoverTrigger>
@@ -147,31 +205,50 @@ function SingleSelectCombobox({
 						onValueChange={handleInputValueChange}
 					/>
 					<CommandList>
-						<CommandEmpty>{emptyText}</CommandEmpty>
+						{loading ? (
+							<CommandLoading>
+								<div className="flex items-center justify-center gap-2 text-muted-foreground">
+									<Loader2 className="h-4 w-4 animate-spin" />
+									<span>載入中...</span>
+								</div>
+							</CommandLoading>
+						) : null}
+						{loading ? null : <CommandEmpty>{emptyText}</CommandEmpty>}
 						<CommandGroup>
-							{options
-								.filter((opt) =>
-									opt.label.toLowerCase().includes(inputValue.toLowerCase()),
-								)
-								.map((option) => (
-									<CommandItem
-										key={option.value}
-										value={option.value}
-										onSelect={(currentValue) => {
-											onChange(currentValue === value ? "" : currentValue);
-											setOpen(false);
-											handleInputValueChange("");
-										}}
+							{canCreateInput ? (
+								<CommandItem
+									value={`__create__${trimmedInput}`}
+									onSelect={handleCreateInput}
+								>
+									<span className="min-w-0 flex-1 truncate">
+										新增「{trimmedInput}」
+									</span>
+								</CommandItem>
+							) : null}
+							{filteredOptions.map((option) => (
+								<CommandItem
+									key={option.value}
+									value={option.value}
+									onSelect={(currentValue) => {
+										onChange(currentValue === value ? "" : currentValue);
+										setOpen(false);
+										handleInputValueChange("");
+									}}
+								>
+									<Check
+										className={cn(
+											"mr-2 h-4 w-4",
+											value === option.value ? "opacity-100" : "opacity-0",
+										)}
+									/>
+									<span
+										className="min-w-0 flex-1 truncate"
+										title={option.label}
 									>
-										<Check
-											className={cn(
-												"mr-2 h-4 w-4",
-												value === option.value ? "opacity-100" : "opacity-0",
-											)}
-										/>
 										{option.label}
-									</CommandItem>
-								))}
+									</span>
+								</CommandItem>
+							))}
 						</CommandGroup>
 					</CommandList>
 				</Command>
@@ -189,6 +266,7 @@ function MultiSelectCombobox({
 	className,
 	disabled,
 	onInputValueChange,
+	loading,
 	inputValue,
 	setInputValue,
 	open,
@@ -211,10 +289,28 @@ function MultiSelectCombobox({
 		onChange(value.filter((v) => v !== selectedValue));
 	};
 
+	const trimmedInput = inputValue.trim();
+	const normalizedQuery = normalizeText(inputValue);
+	const normalizedInput = normalizeText(trimmedInput);
+	const hasExactMatch = hasExactOptionMatch(options, trimmedInput);
+	const isAlreadySelected = value.some(
+		(selectedValue) => normalizeText(selectedValue) === normalizedInput,
+	);
+	const canCreateInput =
+		trimmedInput.length > 0 && !hasExactMatch && !isAlreadySelected;
+
+	const handleCreateInput = () => {
+		if (!canCreateInput) {
+			return;
+		}
+
+		onChange([...value, trimmedInput]);
+		handleInputValueChange("");
+	};
+
 	const filteredOptions = options.filter(
 		(opt) =>
-			opt.label.toLowerCase().includes(inputValue.toLowerCase()) &&
-			!value.includes(opt.value),
+			optionMatchesQuery(opt, normalizedQuery) && !value.includes(opt.value),
 	);
 
 	return (
@@ -226,12 +322,12 @@ function MultiSelectCombobox({
 					aria-expanded={open}
 					disabled={disabled}
 					className={cn(
-						"w-full justify-between font-normal h-auto min-h-9 px-3 py-1.5",
+						"h-auto min-h-9 w-full justify-between gap-2 overflow-hidden px-3 py-1.5 font-normal",
 						value.length === 0 && "text-muted-foreground",
 						className,
 					)}
 				>
-					<div className="flex flex-wrap gap-1 flex-1">
+					<div className="flex min-w-0 flex-1 flex-wrap gap-1">
 						{value.length === 0 ? (
 							<span>{placeholder}</span>
 						) : (
@@ -240,12 +336,14 @@ function MultiSelectCombobox({
 								return (
 									<span
 										key={v}
-										className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-xs font-medium"
+										className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-xs font-medium"
 									>
-										{opt?.label ?? v}
+										<span className="truncate" title={opt?.label ?? v}>
+											{opt?.label ?? v}
+										</span>
 										<button
 											type="button"
-											className="ml-0.5 hover:text-destructive"
+											className="ml-0.5 shrink-0 hover:text-destructive"
 											onClick={(e) => {
 												e.stopPropagation();
 												handleRemove(v);
@@ -271,38 +369,33 @@ function MultiSelectCombobox({
 						value={inputValue}
 						onValueChange={handleInputValueChange}
 						onKeyDown={(e) => {
-							if (e.key === "Enter" && inputValue.trim()) {
+							if (e.key === "Enter" && canCreateInput) {
 								e.preventDefault();
-								// Allow adding custom values
-								const trimmedValue = inputValue.trim();
-								if (!value.includes(trimmedValue)) {
-									onChange([...value, trimmedValue]);
-								}
-								handleInputValueChange("");
+								handleCreateInput();
 							}
 						}}
 					/>
 					<CommandList>
-						<CommandEmpty>
-							{inputValue.trim() ? (
-								<button
-									type="button"
-									className="w-full px-2 py-1.5 text-left text-sm hover:bg-accent"
-									onClick={() => {
-										const trimmedValue = inputValue.trim();
-										if (!value.includes(trimmedValue)) {
-											onChange([...value, trimmedValue]);
-										}
-										handleInputValueChange("");
-									}}
-								>
-									新增「{inputValue.trim()}」
-								</button>
-							) : (
-								emptyText
-							)}
-						</CommandEmpty>
+						{loading ? (
+							<CommandLoading>
+								<div className="flex items-center justify-center gap-2 text-muted-foreground">
+									<Loader2 className="h-4 w-4 animate-spin" />
+									<span>載入中...</span>
+								</div>
+							</CommandLoading>
+						) : null}
+						{loading ? null : <CommandEmpty>{emptyText}</CommandEmpty>}
 						<CommandGroup>
+							{canCreateInput ? (
+								<CommandItem
+									value={`__create__${trimmedInput}`}
+									onSelect={handleCreateInput}
+								>
+									<span className="min-w-0 flex-1 truncate">
+										新增「{trimmedInput}」
+									</span>
+								</CommandItem>
+							) : null}
 							{filteredOptions.map((option) => (
 								<CommandItem
 									key={option.value}
@@ -317,7 +410,12 @@ function MultiSelectCombobox({
 												: "opacity-0",
 										)}
 									/>
-									{option.label}
+									<span
+										className="min-w-0 flex-1 truncate"
+										title={option.label}
+									>
+										{option.label}
+									</span>
 								</CommandItem>
 							))}
 						</CommandGroup>
