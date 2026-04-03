@@ -43,10 +43,7 @@ export const Route = createFileRoute("/api/books/$bookId/cover")({
 
 				const headers = new Headers();
 				headers.set("content-type", contentType);
-				headers.set(
-					"cache-control",
-					"public, max-age=60, stale-while-revalidate=300",
-				);
+				headers.set("cache-control", "public, max-age=31536000, immutable");
 
 				return new Response(coverObject.body, { status: 200, headers });
 			},
