@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { env } from "cloudflare:workers";
-import { getContainer } from "@cloudflare/containers";
+import { getRandom } from "@cloudflare/containers";
 import { Context, Data, Duration, Effect, Layer, Schedule } from "effect";
 
 export class ConversionError extends Data.TaggedError("ConversionError")<{
@@ -70,8 +70,7 @@ const processInContainer = (
 ): Effect.Effect<ContainerProcessResult, ConversionError> =>
 	Effect.tryPromise({
 		try: async () => {
-			// getContainer returns a singleton stub (uses 'cf-singleton-container' by default)
-			const stub = getContainer(env.CONVERTER);
+			const stub = await getRandom(env.CONVERTER, 5);
 
 			const formData = new FormData();
 			formData.append("file", new Blob([bytes]), `input.${options.formatFrom}`);
@@ -128,7 +127,7 @@ const convertInContainer = (
 ): Effect.Effect<ArrayBuffer, ConversionError> =>
 	Effect.tryPromise({
 		try: async () => {
-			const stub = getContainer(env.CONVERTER);
+			const stub = await getRandom(env.CONVERTER, 5);
 
 			const formData = new FormData();
 			formData.append("file", new Blob([bytes]), `input.${formatFrom}`);
