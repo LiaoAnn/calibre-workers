@@ -12,6 +12,7 @@ export default function BookCard({ book }: BookCardProps) {
 			?.split(",")
 			.map((a) => a.trim())
 			.filter(Boolean) ?? [];
+	const coverVersion = book.lastModified ?? book.timestamp;
 
 	return (
 		<Card className="group transition hover:shadow-md py-0">
@@ -24,7 +25,7 @@ export default function BookCard({ book }: BookCardProps) {
 					<div className="aspect-[3/4] overflow-hidden rounded-xl border border-[var(--line)] bg-[rgba(79,184,178,0.08)]">
 						{book.hasCover ? (
 							<img
-								src={`/api/books/${book.id}/cover`}
+								src={`/api/books/${book.id}/cover?v=${coverVersion}`}
 								alt={book.title}
 								className="h-full w-full object-cover"
 								loading="lazy"

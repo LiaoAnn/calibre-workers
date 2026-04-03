@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
 import { AppLayer } from "#/layers/AppLayer";
 import { r2Keys } from "#/lib/r2-keys";
 import { getBookFile } from "#/services/FileService";
@@ -11,22 +11,44 @@ export const Route = createFileRoute("/api/books/$bookId/cover")({
 				const runnable = getBookFile(
 					r2Keys.bookCover({ bookId: params.bookId }),
 				);
-
 				const result = await Effect.runPromise(
-					runnable.pipe(Effect.provide(AppLayer)),
+					Effect.either(runnable.pipe(Effect.provide(AppLayer))),
 				);
 
-				if (!result) {
-					return new Response("Not found", { status: 404 });
+				if (Either.isLeft(result)) {
+					if (
+						result.left._tag === "StorageError" &&
+						result.left.operation === "file.notFound"
+					) {
+						return new Response("Not found", {
+							status: 404,
+							headers: {
+								"cache-control": "no-store",
+							},
+						});
+					}
+
+					return new Response("Failed to load cover", {
+						status: 500,
+						headers: {
+							"cache-control": "no-store",
+						},
+					});
 				}
 
-				const contentType = result.httpMetadata?.contentType ?? "image/jpeg";
+				const coverObject = result.right;
+
+				const contentType =
+					coverObject.httpMetadata?.contentType ?? "image/jpeg";
 
 				const headers = new Headers();
 				headers.set("content-type", contentType);
-				headers.set("cache-control", "public, max-age=31536000, immutable");
+				headers.set(
+					"cache-control",
+					"public, max-age=60, stale-while-revalidate=300",
+				);
 
-				return new Response(result.body, { status: 200, headers });
+				return new Response(coverObject.body, { status: 200, headers });
 			},
 		},
 	},

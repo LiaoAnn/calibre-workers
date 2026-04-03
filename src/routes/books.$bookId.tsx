@@ -49,6 +49,7 @@ function BookDetailPage() {
 			?.split(",")
 			.map((a) => a.trim())
 			.filter(Boolean) ?? [];
+	const coverVersion = book.lastModified ?? book.timestamp;
 	const pubYear = book.pubdate ? new Date(book.pubdate).getFullYear() : null;
 	const description = book.comments[0]?.text;
 
@@ -124,7 +125,7 @@ function BookDetailPage() {
 						<div className="aspect-[3/4] overflow-hidden rounded-2xl border border-[var(--line)] bg-[rgba(79,184,178,0.08)]">
 							{book.hasCover ? (
 								<img
-									src={`/api/books/${book.id}/cover`}
+									src={`/api/books/${book.id}/cover?v=${coverVersion}`}
 									alt={book.title}
 									className="h-full w-full object-cover"
 								/>
