@@ -30,7 +30,7 @@ export const getUploadTasksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: GetTasksInput) => input)
 	.handler(async ({ data, context }) => {
-		const limit = data.limit ?? 50;
+		const limit = data.limit ?? 10;
 		const userId = context.session.user.id;
 
 		const runnable = Effect.gen(function* () {
@@ -68,7 +68,7 @@ export const getConversionTasksServerFn = createServerFn({
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: GetTasksInput) => input)
 	.handler(async ({ data }) => {
-		const limit = data.limit ?? 50;
+		const limit = data.limit ?? 10;
 
 		const runnable = Effect.gen(function* () {
 			const database = yield* DatabaseContext;
@@ -109,7 +109,7 @@ export const getMetadataTasksServerFn = createServerFn({
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: GetTasksInput) => input)
 	.handler(async ({ data, context }) => {
-		const limit = data.limit ?? 50;
+		const limit = data.limit ?? 10;
 		const userId = context.session.user.id;
 
 		const runnable = Effect.gen(function* () {

@@ -19,9 +19,9 @@ import {
 
 const notificationQueryKeys = {
 	all: ["notification"] as const,
-	tasks: (limit = 50) =>
+	tasks: (limit = 10) =>
 		[...notificationQueryKeys.all, "tasks", { limit }] as const,
-	uploadTasks: (limit = 50) =>
+	uploadTasks: (limit = 10) =>
 		[...notificationQueryKeys.all, "upload-tasks", { limit }] as const,
 } as const;
 
@@ -172,7 +172,7 @@ export function useMarkNotificationTaskAsReadMutation() {
 
 export function useMarkAllNotificationsAsReadMutation() {
 	const queryClient = useQueryClient();
-	const { data: tasks = [] } = useNotificationTasks(50);
+	const { data: tasks = [] } = useNotificationTasks(10);
 	const { removeItem } = useUploadQueue();
 
 	return useMutation({

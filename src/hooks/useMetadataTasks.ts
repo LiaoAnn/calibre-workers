@@ -3,13 +3,13 @@ import { getMetadataTasksServerFn, type Task } from "#/server/tasks";
 
 export const metadataQueryKeys = {
 	all: ["metadata", "tasks"] as const,
-	tasks: (limit = 50) => [...metadataQueryKeys.all, { limit }] as const,
+	tasks: (limit = 10) => [...metadataQueryKeys.all, { limit }] as const,
 } as const;
 
 export function useMetadataTasks(
 	options: { limit?: number; bookId?: string } = {},
 ) {
-	const limit = options.limit ?? 50;
+	const limit = options.limit ?? 10;
 
 	const { data, isLoading } = useQuery({
 		queryKey: metadataQueryKeys.tasks(limit),

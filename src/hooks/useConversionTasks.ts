@@ -9,7 +9,7 @@ import { getConversionTasksServerFn, type Task } from "#/server/tasks";
 
 export const conversionQueryKeys = {
 	all: ["conversion", "tasks"] as const,
-	tasks: (limit = 50) => [...conversionQueryKeys.all, { limit }] as const,
+	tasks: (limit = 10) => [...conversionQueryKeys.all, { limit }] as const,
 } as const;
 
 export const conversionMutationKeys = {
@@ -20,7 +20,7 @@ export function useConversionTasks(
 	options: { limit?: number; bookId?: string } = {},
 ) {
 	const queryClient = useQueryClient();
-	const limit = options.limit ?? 50;
+	const limit = options.limit ?? 10;
 
 	const activeMutations = useIsMutating({
 		mutationKey: conversionMutationKeys.trigger,

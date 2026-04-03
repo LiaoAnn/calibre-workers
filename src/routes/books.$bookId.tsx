@@ -67,7 +67,7 @@ function BookDetailPage() {
 	);
 
 	const { activeTasks: activeConversionTasks, triggerConversion } =
-		useConversionTasks({ bookId: book.id, limit: 200 });
+		useConversionTasks({ bookId: book.id, limit: 10 });
 	const prevActiveCountRef = useRef(0);
 
 	const activeConversionBySourceAndTarget = new Map(
