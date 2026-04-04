@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite dev --port 8787 --host",
     "build": "vite build",
+    "build:prod": "CLOUDFLARE_ENV=prod pnpm run build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:converter": "cd src/containers/converter && go test ./...",
@@ -16,7 +17,7 @@
     "lint": "biome lint",
     "check": "biome check",
     "cf-typegen": "wrangler types",
-    "deploy": "CLOUDFLARE_ENV=prod pnpm run build && pnpm run db:apply --remote && wrangler deploy",
+    "deploy": "pnpm run db:apply --remote && wrangler deploy",
     "db:generate": "drizzle-kit generate",
     "db:apply": "wrangler d1 migrations apply calibre-workers-db",
     "db:studio": "drizzle-kit studio"
