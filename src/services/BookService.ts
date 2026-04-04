@@ -4,8 +4,11 @@ import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
-import { BookNotFound } from "#/lib/errors";
 import { r2Keys } from "#/lib/r2-keys";
+
+export class BookNotFound extends Data.TaggedError("BookNotFound")<{
+	readonly bookId: string;
+}> {}
 
 interface BookMetadataForProcess {
 	title: string;

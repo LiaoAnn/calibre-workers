@@ -1,9 +1,13 @@
 import "@tanstack/react-start/server-only";
 
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import { inflateSync, strFromU8, unzipSync } from "fflate";
-import { ParseError } from "#/lib/errors";
 import { getBookFileRange } from "#/services/FileService";
+
+class ParseError extends Data.TaggedError("ParseError")<{
+	readonly stage: string;
+	readonly cause: unknown;
+}> {}
 
 export interface EpubMetadata {
 	title?: string;
