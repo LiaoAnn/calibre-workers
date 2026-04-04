@@ -1,15 +1,18 @@
 import "@tanstack/react-start/server-only";
 
 import { Duration, Effect } from "effect";
-import { DatabaseLive } from "#/layers/DatabaseLayer";
+import { AppLayer } from "#/layers/AppLayer";
 import { failStaleMetadataTasks } from "#/services/BookService";
 import { failStaleConversionJobs } from "#/services/ConversionService";
+import { failStaleUploadTasks } from "#/services/FileService";
 
 const STALE_TASK_WINDOW = Duration.minutes(45);
 const STALE_CONVERSION_ERROR_MESSAGE =
 	"Marked as failed by scheduled stale-task sweeper";
 const STALE_METADATA_ERROR_MESSAGE =
 	"Marked as failed by scheduled stale-task sweeper";
+const STALE_UPLOAD_ERROR_MESSAGE =
+	"Marked as failed by scheduled stale-upload sweeper";
 
 export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 	controller,
@@ -21,7 +24,7 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 	const staleBefore = new Date(staleBeforeMs);
 
 	const runnable = Effect.gen(function* () {
-		const [conversionResult, metadataResult] = yield* Effect.all(
+		const [conversionResult, metadataResult, uploadResult] = yield* Effect.all(
 			[
 				failStaleConversionJobs({
 					staleBefore,
@@ -30,6 +33,10 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 				failStaleMetadataTasks({
 					staleBefore,
 					errorMessage: STALE_METADATA_ERROR_MESSAGE,
+				}),
+				failStaleUploadTasks({
+					staleBefore,
+					errorMessage: STALE_UPLOAD_ERROR_MESSAGE,
 				}),
 			],
 			{ concurrency: "unbounded" },
@@ -41,9 +48,10 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 				staleBeforeMs,
 				conversionAffected: conversionResult.affectedCount,
 				metadataAffected: metadataResult.affectedCount,
+				uploadAffected: uploadResult.affectedCount,
 			});
 		});
 	});
 
-	await Effect.runPromise(runnable.pipe(Effect.provide(DatabaseLive)));
+	await Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
 };
