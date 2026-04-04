@@ -28,7 +28,6 @@ export const createConversionJob = (input: CreateConversionJobInput) =>
 			bookId: input.bookId,
 			sourceFileId: input.sourceFileId,
 			targetFormat: input.targetFormat,
-			status: "pending",
 		});
 
 		return { jobId: id };

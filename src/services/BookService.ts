@@ -313,7 +313,6 @@ export const createMetadataJob = ({
 			id,
 			bookId,
 			userId,
-			status: "pending",
 		});
 
 		return { jobId: id };
