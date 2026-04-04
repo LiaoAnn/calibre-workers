@@ -12,7 +12,7 @@ export default function BookCard({ book }: BookCardProps) {
 			?.split(",")
 			.map((a) => a.trim())
 			.filter(Boolean) ?? [];
-	const coverVersion = book.lastModified ?? book.timestamp;
+	const coverVersion = book.lastModified.getTime();
 
 	return (
 		<Card className="group transition hover:shadow-md py-0">

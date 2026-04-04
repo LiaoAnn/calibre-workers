@@ -53,7 +53,7 @@ function BookDetailPage() {
 			?.split(",")
 			.map((a) => a.trim())
 			.filter(Boolean) ?? [];
-	const coverVersion = book.lastModified ?? book.timestamp;
+	const coverVersion = book.lastModified.getTime();
 	const pubYear = book.pubdate ? new Date(book.pubdate).getFullYear() : null;
 	const description = book.comments[0]?.text;
 
