@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import * as schema from "#/db/schema";
 import { AppLayer } from "#/layers/AppLayer";
@@ -12,18 +12,68 @@ import {
 import { r2Keys } from "#/lib/r2-keys";
 import { requiredSessionMiddleware } from "#/middleware/auth";
 import { createBookFromUpload, deleteBook } from "#/services/BookService";
-import type { EpubMetadata } from "#/services/EpubService";
-import { parseEpubCover, parseEpubMetadata } from "#/services/EpubService";
-import { deleteBookFile, uploadBookFile } from "#/services/FileService";
+import { parseEpubMetadataAndCoverFromR2 } from "#/services/EpubService";
+import {
+	abortMultipartUpload,
+	completeMultipartUpload,
+	createMultipartUpload,
+	deleteBookFile,
+	getBookFile,
+	uploadBookFile,
+	uploadMultipartPart,
+} from "#/services/FileService";
 
 class UploadError extends Data.TaggedError("UploadError")<{
 	readonly message: string;
 	readonly cause?: unknown;
 }> {}
 
-const isSupportedUploadFile = (file: File) =>
-	file.name.toLowerCase().endsWith(".epub") ||
-	file.type.toLowerCase().includes("epub");
+const isSupportedUploadInfo = (input: {
+	fileName: string;
+	mimeType?: string;
+}) =>
+	input.fileName.toLowerCase().endsWith(".epub") ||
+	(input.mimeType ?? "").toLowerCase().includes("epub");
+
+const R2_MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
+const R2_MULTIPART_MAX_PARTS = 10_000;
+const R2_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024;
+
+const resolveTitle = (title: string | undefined, fileName: string) => {
+	const trimmed = title?.trim();
+	if (trimmed) {
+		return trimmed;
+	}
+
+	return fileName.replace(/\.[^.]+$/, "");
+};
+
+const resolveAuthorsFromMetadata = (
+	author: string | undefined,
+	fallbackAuthors: string[] | undefined,
+) => {
+	const trimmed = author?.trim();
+	const resolved = trimmed ? [trimmed] : [];
+	if (resolved.length > 0) {
+		return resolved;
+	}
+
+	return (fallbackAuthors ?? [])
+		.map((value) => value.trim())
+		.filter((value) => value.length > 0);
+};
+
+const resolvePubdate = (pubdate: string | undefined): Date | undefined => {
+	if (!pubdate) {
+		return undefined;
+	}
+
+	const parsed = new Date(pubdate);
+	return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
+const uploadTaskNotFound = (taskId: string) =>
+	new UploadError({ message: `Upload task not found: ${taskId}` });
 
 const coverValidationErrorMessage = (issue: CoverValidationIssue): string => {
 	switch (issue) {
@@ -85,105 +135,288 @@ export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
 		};
 	});
 
-export const uploadBookServerFn = createServerFn({ method: "POST" })
-	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: FormData) => input)
-	.handler(async ({ data, context }) => {
-		const file = data.get("file");
-		const author = data.get("author");
-		const title = data.get("title");
+interface CreateBookUploadSessionInput {
+	fileName: string;
+	fileSize: number;
+	mimeType?: string;
+}
 
-		if (!(file instanceof File)) {
-			throw new Error("Missing file");
+export const createBookUploadSessionServerFn = createServerFn({
+	method: "POST",
+})
+	.middleware([requiredSessionMiddleware])
+	.inputValidator((input: CreateBookUploadSessionInput) => input)
+	.handler(async ({ data, context }) => {
+		const userId = context.session.user.id;
+		const fileName = data.fileName?.trim();
+
+		if (!fileName) {
+			throw new UploadError({ message: "Missing file name" });
 		}
 
-		if (!isSupportedUploadFile(file)) {
+		if (!Number.isFinite(data.fileSize) || data.fileSize <= 0) {
+			throw new UploadError({ message: "Invalid file size" });
+		}
+
+		if (data.fileSize > R2_MAX_UPLOAD_SIZE_BYTES) {
+			throw new UploadError({
+				message: "File too large. Maximum supported size is 5GB.",
+			});
+		}
+
+		if (!isSupportedUploadInfo({ fileName, mimeType: data.mimeType })) {
 			throw new UploadError({
 				message: "Unsupported file format. Only .epub is allowed.",
 			});
 		}
 
-		// Create upload task record
-		const taskId = crypto.randomUUID();
-		const userId = context.session.user.id;
+		const totalParts = Math.ceil(data.fileSize / R2_MULTIPART_PART_SIZE_BYTES);
+		if (totalParts > R2_MULTIPART_MAX_PARTS) {
+			throw new UploadError({
+				message: "File is too large for multipart upload configuration.",
+			});
+		}
 
-		const isEpub = isSupportedUploadFile(file);
+		const taskId = crypto.randomUUID();
+		const stagingR2Key = r2Keys.bookUploadStaging({
+			userId,
+			taskId,
+			fileName,
+		});
 
 		const runnable = Effect.gen(function* () {
 			const database = yield* DatabaseContext;
 
-			// Create upload task record
 			yield* database.insert(schema.uploadTasks).values({
 				id: taskId,
 				userId,
-				fileName: file.name,
-				status: "processing",
+				fileName,
 			});
 
-			// Read once for EPUB validation, metadata extraction, and integrity checks.
-			const fileBuffer = yield* Effect.tryPromise({
-				try: () => file.arrayBuffer(),
-				catch: (cause) =>
-					new UploadError({ message: "Failed to read file", cause }),
-			});
+			const multipart = yield* createMultipartUpload({
+				r2Key: stagingR2Key,
+				contentType: data.mimeType || undefined,
+				customMetadata: {
+					taskId,
+					userId,
+					fileName,
+				},
+			}).pipe(
+				Effect.catchAll((error) =>
+					Effect.gen(function* () {
+						yield* database
+							.update(schema.uploadTasks)
+							.set({
+								status: "failed",
+								errorMessage: "Failed to initialize multipart upload",
+							})
+							.where(eq(schema.uploadTasks.id, taskId));
 
-			if (fileBuffer.byteLength !== file.size) {
+						return yield* Effect.fail(error);
+					}),
+				),
+			);
+
+			yield* database
+				.update(schema.uploadTasks)
+				.set({
+					status: "processing",
+					stagingR2Key,
+					multipartUploadId: multipart.uploadId,
+				})
+				.where(eq(schema.uploadTasks.id, taskId));
+
+			return {
+				taskId,
+				partSizeBytes: R2_MULTIPART_PART_SIZE_BYTES,
+				totalParts,
+			};
+		});
+
+		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+	});
+
+export const uploadBookPartServerFn = createServerFn({ method: "POST" })
+	.middleware([requiredSessionMiddleware])
+	.inputValidator((input: FormData) => input)
+	.handler(async ({ data, context }) => {
+		const taskId = data.get("taskId");
+		const partNumberRaw = data.get("partNumber");
+		const part = data.get("part");
+
+		if (typeof taskId !== "string" || taskId.trim().length === 0) {
+			throw new UploadError({ message: "Missing taskId" });
+		}
+
+		if (
+			typeof partNumberRaw !== "string" ||
+			partNumberRaw.trim().length === 0
+		) {
+			throw new UploadError({ message: "Missing partNumber" });
+		}
+
+		const partNumber = Number.parseInt(partNumberRaw, 10);
+		if (!Number.isInteger(partNumber) || partNumber <= 0) {
+			throw new UploadError({ message: "Invalid partNumber" });
+		}
+
+		if (!(part instanceof File)) {
+			throw new UploadError({ message: "Missing upload part" });
+		}
+
+		const userId = context.session.user.id;
+
+		const runnable = Effect.gen(function* () {
+			const database = yield* DatabaseContext;
+			const rows = yield* database
+				.select()
+				.from(schema.uploadTasks)
+				.where(
+					and(
+						eq(schema.uploadTasks.id, taskId),
+						eq(schema.uploadTasks.userId, userId),
+					),
+				)
+				.limit(1);
+
+			const task = rows[0];
+			if (!task) {
+				return yield* Effect.fail(uploadTaskNotFound(taskId));
+			}
+
+			if (task.status === "success" || task.status === "failed") {
 				return yield* Effect.fail(
 					new UploadError({
-						message:
-							"Invalid or incomplete upload. File size does not match payload.",
+						message: `Upload task is already ${task.status}`,
 					}),
 				);
 			}
 
-			const extractedMetadata: EpubMetadata = isEpub
-				? yield* parseEpubMetadata(fileBuffer).pipe(
-						Effect.catchAll((cause) =>
-							Effect.fail(
-								new UploadError({
-									message:
-										"Invalid or corrupted EPUB file. Could not parse metadata.",
-									cause,
-								}),
-							),
-						),
-					)
-				: ({} as EpubMetadata);
+			if (!task.stagingR2Key || !task.multipartUploadId) {
+				return yield* Effect.fail(
+					new UploadError({ message: "Upload session is not initialized" }),
+				);
+			}
 
-			const cover = isEpub
-				? yield* parseEpubCover(fileBuffer).pipe(
-						Effect.catchAll(() => Effect.succeed(undefined)),
-					)
-				: undefined;
+			const uploadedPart = yield* uploadMultipartPart({
+				r2Key: task.stagingR2Key,
+				uploadId: task.multipartUploadId,
+				partNumber,
+				body: part.stream(),
+			});
 
-			const resolvedTitle =
-				typeof title === "string" && title.trim().length > 0
-					? title.trim()
-					: extractedMetadata.title?.trim() ||
-						file.name.replace(/\.[^.]+$/, "");
+			yield* database
+				.update(schema.uploadTasks)
+				.set({
+					status: "processing",
+					errorMessage: null,
+				})
+				.where(eq(schema.uploadTasks.id, task.id));
 
-			const resolvedAuthors =
-				typeof author === "string" && author.trim().length > 0
-					? [author.trim()]
-					: (extractedMetadata.authors?.filter((a) => a.trim().length > 0) ??
-						[]);
+			return {
+				partNumber: uploadedPart.partNumber,
+				eTag: uploadedPart.etag,
+			};
+		});
 
-			const resolvedPubdate = extractedMetadata.pubdate
-				? (() => {
-						const d = new Date(extractedMetadata.pubdate as string);
-						return Number.isNaN(d.getTime()) ? undefined : d;
-					})()
-				: undefined;
+		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+	});
 
-			// Track created resources for rollback (using a mutable ref pattern)
-			// This is acceptable in Effect for resource cleanup scenarios
+interface CompleteBookUploadInput {
+	taskId: string;
+	parts: Array<{ partNumber: number; eTag: string }>;
+	fileSize: number;
+	mimeType?: string;
+	title?: string;
+	author?: string;
+}
+
+export const completeBookUploadServerFn = createServerFn({ method: "POST" })
+	.middleware([requiredSessionMiddleware])
+	.inputValidator((input: CompleteBookUploadInput) => input)
+	.handler(async ({ data, context }) => {
+		if (!data.taskId || data.taskId.trim().length === 0) {
+			throw new UploadError({ message: "Missing taskId" });
+		}
+
+		if (!Number.isFinite(data.fileSize) || data.fileSize <= 0) {
+			throw new UploadError({ message: "Invalid file size" });
+		}
+
+		if (!Array.isArray(data.parts) || data.parts.length === 0) {
+			throw new UploadError({ message: "Missing uploaded parts" });
+		}
+
+		const userId = context.session.user.id;
+
+		const runnable = Effect.gen(function* () {
+			const database = yield* DatabaseContext;
+			const rows = yield* database
+				.select()
+				.from(schema.uploadTasks)
+				.where(
+					and(
+						eq(schema.uploadTasks.id, data.taskId),
+						eq(schema.uploadTasks.userId, userId),
+					),
+				)
+				.limit(1);
+
+			const task = rows[0];
+			if (!task) {
+				return yield* Effect.fail(uploadTaskNotFound(data.taskId));
+			}
+
+			if (task.status === "success" && task.bookId) {
+				return {
+					bookId: task.bookId,
+					title: resolveTitle(data.title, task.fileName),
+					taskId: task.id,
+				};
+			}
+
+			if (!task.stagingR2Key || !task.multipartUploadId) {
+				return yield* Effect.fail(
+					new UploadError({ message: "Upload session is not initialized" }),
+				);
+			}
+
+			const stagingR2Key = task.stagingR2Key;
+			const multipartUploadId = task.multipartUploadId;
+
+			const partMap = new Map<number, string>();
+			for (const part of data.parts) {
+				if (!Number.isInteger(part.partNumber) || part.partNumber <= 0) {
+					return yield* Effect.fail(
+						new UploadError({ message: "Invalid uploaded part number" }),
+					);
+				}
+
+				if (typeof part.eTag !== "string" || part.eTag.trim().length === 0) {
+					return yield* Effect.fail(
+						new UploadError({ message: "Invalid uploaded part etag" }),
+					);
+				}
+
+				partMap.set(part.partNumber, part.eTag);
+			}
+
+			const uploadedParts: R2UploadedPart[] = Array.from(partMap.entries())
+				.sort((a, b) => a[0] - b[0])
+				.map(([partNumber, etag]) => ({ partNumber, etag }));
+
+			if (uploadedParts.length === 0) {
+				return yield* Effect.fail(
+					new UploadError({ message: "No uploaded parts to complete" }),
+				);
+			}
+
 			const createdResources = {
 				bookId: undefined as string | undefined,
 				fileR2Key: undefined as string | undefined,
 				coverR2Key: undefined as string | undefined,
 			};
 
-			// Rollback helper
 			const performRollback = () =>
 				Effect.gen(function* () {
 					if (createdResources.fileR2Key) {
@@ -191,109 +424,230 @@ export const uploadBookServerFn = createServerFn({ method: "POST" })
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
+
 					if (createdResources.coverR2Key) {
 						yield* deleteBookFile(createdResources.coverR2Key).pipe(
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
+
 					if (createdResources.bookId) {
 						yield* deleteBook(createdResources.bookId).pipe(
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
+
+					yield* deleteBookFile(stagingR2Key).pipe(
+						Effect.catchAll(() => Effect.succeed(undefined)),
+					);
 				});
 
-			// Main upload effect
-			const uploadEffect = Effect.gen(function* () {
+			const completeEffect = Effect.gen(function* () {
+				const completedObject = yield* completeMultipartUpload({
+					r2Key: stagingR2Key,
+					uploadId: multipartUploadId,
+					uploadedParts,
+				});
+
+				if (completedObject.size !== data.fileSize) {
+					return yield* Effect.fail(
+						new UploadError({
+							message:
+								"Invalid or incomplete upload. File size does not match payload.",
+						}),
+					);
+				}
+
+				const parsedEpub = yield* parseEpubMetadataAndCoverFromR2({
+					r2Key: stagingR2Key,
+				});
+
+				const resolvedTitle = resolveTitle(
+					data.title ?? parsedEpub.metadata.title,
+					task.fileName,
+				);
+				const resolvedAuthors = resolveAuthorsFromMetadata(
+					data.author,
+					parsedEpub.metadata.authors,
+				);
+				const resolvedPubdate = resolvePubdate(parsedEpub.metadata.pubdate);
+
+				const stagedObject = yield* getBookFile(stagingR2Key);
+				if (!stagedObject.body) {
+					return yield* Effect.fail(
+						new UploadError({ message: "Uploaded file body is empty" }),
+					);
+				}
+
 				const created = yield* createBookFromUpload({
 					title: resolvedTitle,
 					authors: resolvedAuthors,
-					description: extractedMetadata.description,
-					publisher: extractedMetadata.publisher,
-					tags: extractedMetadata.tags,
-					language: extractedMetadata.language,
+					description: parsedEpub.metadata.description,
+					publisher: parsedEpub.metadata.publisher,
+					tags: parsedEpub.metadata.tags,
+					language: parsedEpub.metadata.language,
 					pubdate: resolvedPubdate,
-					series: extractedMetadata.series,
-					seriesIndex: extractedMetadata.seriesIndex,
-					identifiers: extractedMetadata.identifiers,
-					fileName: file.name,
-					mimeType: file.type || undefined,
-					size: file.size,
-					hasCover: !!cover,
+					series: parsedEpub.metadata.series,
+					seriesIndex: parsedEpub.metadata.seriesIndex,
+					identifiers: parsedEpub.metadata.identifiers,
+					fileName: task.fileName,
+					mimeType:
+						data.mimeType ||
+						stagedObject.httpMetadata?.contentType ||
+						undefined,
+					size: data.fileSize,
+					hasCover: Boolean(parsedEpub.cover),
 				});
 
-				// Track resources for potential rollback
 				createdResources.bookId = created.book.id;
 				createdResources.fileR2Key = created.file.r2Key;
 
-				// Upload main file using stream
 				yield* uploadBookFile({
 					r2Key: created.file.r2Key,
-					body: fileBuffer,
-					contentType: file.type || undefined,
-					expectedSize: file.size,
+					body: stagedObject.body,
+					contentType:
+						data.mimeType ||
+						stagedObject.httpMetadata?.contentType ||
+						undefined,
+					expectedSize: data.fileSize,
 				});
 
-				// Upload cover if exists
-				if (cover) {
-					createdResources.coverR2Key = r2Keys.bookCover({
+				if (parsedEpub.cover) {
+					const coverR2Key = r2Keys.bookCover({
 						bookId: created.book.id,
 					});
+					createdResources.coverR2Key = coverR2Key;
+
 					yield* uploadBookFile({
-						r2Key: createdResources.coverR2Key,
-						body: cover.data,
-						contentType: cover.mimeType,
-						expectedSize: cover.data.byteLength,
+						r2Key: coverR2Key,
+						body: parsedEpub.cover.data,
+						contentType: parsedEpub.cover.mimeType,
+						expectedSize: parsedEpub.cover.data.byteLength,
 					});
 				}
 
-				// Update task to success
+				yield* deleteBookFile(stagingR2Key);
+
 				yield* database
 					.update(schema.uploadTasks)
 					.set({
 						status: "success",
 						bookId: created.book.id,
+						errorMessage: null,
+						stagingR2Key: null,
+						multipartUploadId: null,
 					})
-					.where(eq(schema.uploadTasks.id, taskId));
+					.where(eq(schema.uploadTasks.id, task.id));
 
 				return {
 					bookId: created.book.id,
 					title: created.book.title,
-					taskId,
+					taskId: task.id,
 				};
 			});
 
-			// Execute with onExit for cleanup and error handling
-			return yield* uploadEffect.pipe(
+			return yield* completeEffect.pipe(
 				Effect.onExit((exit) => {
-					// Only rollback on failure (includes interruption)
 					if (exit._tag === "Failure") {
 						return performRollback();
 					}
+
 					return Effect.succeed(undefined);
 				}),
 				Effect.catchAll((error) =>
 					Effect.gen(function* () {
-						// Update task to failed
+						if (task.stagingR2Key && task.multipartUploadId) {
+							yield* abortMultipartUpload({
+								r2Key: stagingR2Key,
+								uploadId: multipartUploadId,
+							}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+						}
+
+						const message =
+							error instanceof Error ? error.message : "Upload failed";
+
 						yield* database
 							.update(schema.uploadTasks)
 							.set({
 								status: "failed",
-								errorMessage:
-									error instanceof Error ? error.message : "Upload failed",
+								errorMessage: message,
+								stagingR2Key: null,
+								multipartUploadId: null,
 							})
-							.where(eq(schema.uploadTasks.id, taskId));
+							.where(eq(schema.uploadTasks.id, task.id));
 
 						return yield* Effect.fail(
-							new UploadError({
-								message:
-									error instanceof Error ? error.message : "Upload failed",
-								cause: error,
-							}),
+							new UploadError({ message, cause: error }),
 						);
 					}),
 				),
 			);
+		});
+
+		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+	});
+
+interface AbortBookUploadInput {
+	taskId: string;
+	reason?: string;
+}
+
+export const abortBookUploadServerFn = createServerFn({ method: "POST" })
+	.middleware([requiredSessionMiddleware])
+	.inputValidator((input: AbortBookUploadInput) => input)
+	.handler(async ({ data, context }) => {
+		if (!data.taskId || data.taskId.trim().length === 0) {
+			throw new UploadError({ message: "Missing taskId" });
+		}
+
+		const userId = context.session.user.id;
+
+		const runnable = Effect.gen(function* () {
+			const database = yield* DatabaseContext;
+			const rows = yield* database
+				.select()
+				.from(schema.uploadTasks)
+				.where(
+					and(
+						eq(schema.uploadTasks.id, data.taskId),
+						eq(schema.uploadTasks.userId, userId),
+					),
+				)
+				.limit(1);
+
+			const task = rows[0];
+			if (!task) {
+				return { success: true };
+			}
+
+			if (task.status === "success" || task.status === "failed") {
+				return { success: true };
+			}
+
+			if (task.stagingR2Key && task.multipartUploadId) {
+				yield* abortMultipartUpload({
+					r2Key: task.stagingR2Key,
+					uploadId: task.multipartUploadId,
+				}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+			}
+
+			if (task.stagingR2Key) {
+				yield* deleteBookFile(task.stagingR2Key).pipe(
+					Effect.catchAll(() => Effect.succeed(undefined)),
+				);
+			}
+
+			yield* database
+				.update(schema.uploadTasks)
+				.set({
+					status: "failed",
+					errorMessage: data.reason ?? "Upload aborted by client",
+					stagingR2Key: null,
+					multipartUploadId: null,
+				})
+				.where(eq(schema.uploadTasks.id, task.id));
+
+			return { success: true };
 		});
 
 		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));

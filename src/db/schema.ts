@@ -425,6 +425,9 @@ export const uploadTasks = sqliteTable(
 		userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
 		// for identifying the file that upload failed
 		fileName: text("file_name").notNull(),
+		// multipart session state for large upload lifecycle control
+		stagingR2Key: text("staging_r2_key"),
+		multipartUploadId: text("multipart_upload_id"),
 		status: text("status")
 			.$type<UploadTaskStatus>()
 			.notNull()
