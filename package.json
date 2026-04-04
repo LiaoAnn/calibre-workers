@@ -22,6 +22,13 @@
     "db:apply": "wrangler d1 migrations apply calibre-workers-db",
     "db:studio": "drizzle-kit studio"
   },
+  "cloudflare": {
+    "bindings": {
+      "BETTER_AUTH_SECRET": {
+        "description": "a random, high-entropy secret string for Better Auth"
+      }
+    }
+  },
   "dependencies": {
     "@cloudflare/containers": "^0.1.1",
     "@cloudflare/vite-plugin": "^1.26.0",

@@ -1,213 +1,120 @@
-Welcome to your new TanStack Start app! 
+# calibre-workers
 
-# Getting Started
+`calibre-workers` is a serverless ebook management and conversion platform built on Cloudflare Workers, R2, D1, Queues, and Containers. The project aims to provide a lightweight, fast, cloud-native alternative to Calibre for managing, reading, and converting ebooks.
 
-To run this application:
+## What is this project?
+
+This is a full-stack application that combines a modern frontend with Cloudflare edge infrastructure:
+
+- **Serverless full-stack architecture**: the frontend uses React + TanStack Start, and the backend runs on Cloudflare Workers.
+- **Cloud ebook storage (R2)**: ebook files are stored in a low-cost, reliable Cloudflare R2 bucket (`calibre-books`).
+- **Relational database (D1)**: Cloudflare D1 and Drizzle ORM are used to manage structured book metadata such as authors, categories, series, and tags.
+- **Asynchronous task processing (Queues)**: Cloudflare Queues handle background jobs such as metadata extraction and pending conversion tasks.
+- **Cloud-based conversion (Containers)**: Cloudflare Containers run the conversion environment, powered by Go, with support for common formats such as `epub`, `kepub`, `azw3`, and `mobi`.
+- **User and access management**: built-in Better Auth authentication provides secure multi-user access control.
+
+## Why does this project exist?
+
+I used calibre-web for about two years to run my personal online library. It solved the multi-device reading problem, but after a while I started seeing unexplained upload failures and conversion issues. The UI/UX also was not great, and the traditional setup still required me to maintain a server and pay for VPS hosting.
+
+To solve those pain points, I decided to redesign the entire ebook and conversion stack and move everything to Cloudflare. `calibre-workers` uses Cloudflare's serverless ecosystem to provide:
+
+1. **Zero ops hosting**: no NAS, no always-on server, and no manual infrastructure maintenance.
+2. **Low operating cost**: Cloudflare's R2, D1, and Workers services are a good fit for a personal ebook library.
+3. **Cloud-native conversion capacity**: expensive conversion work runs inside Cloudflare Containers, so local machines are not burdened by it.
+
+---
+
+## Deployment
+
+### Prerequisites
+
+- A Cloudflare account connected to your GitHub account
+- Permission to deploy Cloudflare Workers from that account
+- Cloudflare Workers Paid Subscription, so that you can use Cloudflare Containers for the conversion environment.
+
+### One-click deploy
+
+Click the button below to open Cloudflare's deploy flow. Cloudflare will guide you through creating and binding the resources this project needs, including R2, D1, and Queues:
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/LiaoAnn/calibre-workers)
+
+### Deploy flow
+
+1. Click the Deploy button and authorize Cloudflare.
+2. Review or adjust the project and resource names, then set:
+   - Build Command: `pnpm run build`
+   - Deploy Command: `pnpm run deploy`
+3. Click Create and deploy to finish the initial deployment.
+
+### Manual follow-up after deployment
+
+#### 1. Set secrets
+
+Add the following variables in the Cloudflare Dashboard for the new project:
+
+- `BETTER_AUTH_SECRET`: a random, high-entropy secret string
+- `BETTER_AUTH_URL`: your production Worker URL or custom domain, should be https://calibre.workers.yourname.workers.dev or https://library.yourdomain.com
+
+> `pnpm run deploy` already includes `pnpm run db:apply --remote`, so migrations are applied automatically during deployment and do not need to be run manually.
+
+#### 2. Register
+
+The first time you access the deployed Worker URL, you will see the registration page. Create an account with your email and a password. This account will be the admin user for the library, and you can create additional users from the settings page after logging in.
+
+---
+
+## Development
+
+This project uses TypeScript and `pnpm`. The frontend is built with Vite-based [TanStack Start](https://tanstack.com/router), and the backend uses [Effect](https://effect.website/) for asynchronous workflows, state management, and type-safe error handling.
+
+### 0. Open the dev container
+
+Use VS Code's **Dev Containers** or **Remote - Containers** extension to open the environment defined in `.devcontainer/docker-compose.yml`. The setup already includes the services and tools needed for local development:
+
+- `docker.sock`: required so Cloudflare Containers can launch through the local Docker CLI
+- `pnpm_store`: binds the pnpm cache to the container so dependencies do not need to be downloaded again on every rebuild
+
+This project always uses Cloudflare Containers during development, so `docker.sock` must remain mounted.
+
+### 1. Install dependencies
 
 ```bash
 pnpm install
+```
+
+### 2. Start the local dev environment
+
+```bash
 pnpm dev
 ```
 
-# Building For Production
+This is the main development command. It starts the local development server and Wrangler's emulation environment so you can work at `http://localhost:8787`.
 
-To build this application for production:
+### 3. Database workflow
+
+The database schema lives in `src/db/schema.ts` and is managed with Drizzle ORM. When the schema changes, the two usual commands are:
 
 ```bash
-pnpm build
+pnpm db:generate
+pnpm db:apply
 ```
 
-## Testing
+The first command generates migrations, and the second applies them to the current environment. Remote migration application is also handled automatically by `pnpm run deploy`.
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
-
-```bash
-pnpm test
-```
-
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `pnpm add @tailwindcss/vite tailwindcss --dev`
-
-## Linting & Formatting
-
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
+### 4. Linting and formatting
 
 ```bash
-pnpm lint
 pnpm format
+pnpm lint
 pnpm check
 ```
 
+### 5. Converter tests
 
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
+If you change the Go-based conversion code under `src/containers/converter/`, run:
 
 ```bash
-pnpm dlx shadcn@latest add button
+pnpm test:converter
+pnpm test:converter:integration
 ```
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
