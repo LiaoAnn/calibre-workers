@@ -9,7 +9,6 @@ import {
 	useConversionTasks,
 } from "#/hooks/useConversionTasks";
 import { metadataQueryKeys, useMetadataTasks } from "#/hooks/useMetadataTasks";
-import { useUploadQueue } from "#/hooks/useUploadQueue";
 import {
 	getUploadTasksServerFn,
 	markTaskAsReadServerFn,
@@ -41,7 +40,6 @@ export function useNotificationTasks(limit = 10) {
 		useMetadataTasks({
 			limit,
 		});
-	const { queuedItems, uploadingItem, totalQueueLength } = useUploadQueue();
 
 	const uploadQuery = useQuery({
 		queryKey: notificationQueryKeys.uploadTasks(limit),
@@ -51,42 +49,13 @@ export function useNotificationTasks(limit = 10) {
 			const hasActiveFromApi = tasks.some(
 				(task) => task.status === "pending" || task.status === "processing",
 			);
-			const hasLocalQueue = totalQueueLength > 0;
-			return hasActiveFromApi || hasLocalQueue || activeUploads > 0
-				? 3000
-				: false;
+			return hasActiveFromApi || activeUploads > 0 ? 3000 : false;
 		},
 		refetchIntervalInBackground: false,
 	});
 
-	const localQueueTasks: Task[] = [
-		...queuedItems.map((item) => ({
-			id: item.id,
-			type: "upload" as const,
-			fileName: item.file.name,
-			status: "pending" as const,
-			readAt: null,
-			createdAt: item.submittedAt,
-			updatedAt: item.submittedAt,
-		})),
-		...(uploadingItem
-			? [
-					{
-						id: uploadingItem.id,
-						type: "upload" as const,
-						fileName: uploadingItem.file.name,
-						status: "processing" as const,
-						readAt: null,
-						createdAt: uploadingItem.submittedAt,
-						updatedAt: Date.now(),
-					},
-				]
-			: []),
-	];
-
 	const uploadTasks = uploadQuery.data ?? [];
 	const mergedTasks = [
-		...localQueueTasks,
 		...uploadTasks,
 		...conversionTasks,
 		...metadataTasks,
@@ -103,7 +72,6 @@ export function useNotificationTasks(limit = 10) {
 
 export function useMarkNotificationTaskAsReadMutation() {
 	const queryClient = useQueryClient();
-	const { removeItem } = useUploadQueue();
 
 	return useMutation({
 		mutationFn: ({
@@ -112,13 +80,7 @@ export function useMarkNotificationTaskAsReadMutation() {
 		}: {
 			taskId: string;
 			taskType: Task["type"];
-		}) => {
-			if (taskId.startsWith("local-")) {
-				removeItem(taskId);
-				return Promise.resolve({ success: true });
-			}
-			return markTaskAsReadServerFn({ data: { taskId, taskType } });
-		},
+		}) => markTaskAsReadServerFn({ data: { taskId, taskType } }),
 		// onMutate: async ({ taskId }) => {
 		// 	await queryClient.cancelQueries({ queryKey: notificationQueryKeys.all });
 		// 	await queryClient.cancelQueries({ queryKey: conversionQueryKeys.all });
@@ -173,7 +135,6 @@ export function useMarkNotificationTaskAsReadMutation() {
 export function useMarkAllNotificationsAsReadMutation() {
 	const queryClient = useQueryClient();
 	const { data: tasks = [] } = useNotificationTasks(10);
-	const { removeItem } = useUploadQueue();
 
 	return useMutation({
 		mutationFn: async () => {
@@ -183,22 +144,10 @@ export function useMarkAllNotificationsAsReadMutation() {
 					!task.readAt,
 			);
 
-			const localTasks = completedTasks.filter((t) =>
-				t.id.startsWith("local-"),
-			);
-			const remoteTasks = completedTasks.filter(
-				(t) => !t.id.startsWith("local-"),
-			);
-
-			// remove completed local tasks
-			for (const task of localTasks) {
-				removeItem(task.id);
-			}
-
-			if (remoteTasks.length > 0) {
+			if (completedTasks.length > 0) {
 				await markTasksAsReadServerFn({
 					data: {
-						taskIds: remoteTasks.map((t) => ({ id: t.id, type: t.type })),
+						taskIds: completedTasks.map((t) => ({ id: t.id, type: t.type })),
 					},
 				});
 			}
