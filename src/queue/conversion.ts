@@ -21,7 +21,6 @@ export interface ConversionQueueMessage {
 	jobId: string;
 }
 
-const CONVERSION_MAX_ATTEMPTS = 3;
 const CONVERSION_TASK_TIMEOUT = Duration.minutes(10);
 
 const isBookFileFormat = (format: string): format is BookFileFormat =>
@@ -135,31 +134,21 @@ const runConversionJob = (jobId: string) =>
 
 const settleConversionFailure = ({
 	jobId,
-	attempts,
 	errorMessage,
 	message,
 }: {
 	jobId: string;
-	attempts: number;
 	errorMessage: string;
 	message: Message<ConversionQueueMessage>;
 }) =>
 	Effect.gen(function* () {
-		const finalAttempt = attempts >= CONVERSION_MAX_ATTEMPTS;
-		const failedStatus = finalAttempt ? "failed" : "pending";
-
 		yield* updateConversionJobStatus(jobId, {
-			status: failedStatus,
+			status: "failed",
 			errorMessage,
 		}).pipe(Effect.catchAll(() => Effect.void));
 
 		yield* Effect.sync(() => {
-			if (finalAttempt) {
-				message.ack();
-				return;
-			}
-
-			message.retry();
+			message.ack();
 		});
 	});
 
@@ -189,25 +178,27 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 
 			yield* settleConversionFailure({
 				jobId,
-				attempts: message.attempts,
 				errorMessage: causePretty,
 				message,
 			});
 		}).pipe(
 			Effect.catchAllCause((cause) =>
-				Effect.sync(() => {
+				Effect.gen(function* () {
 					const { jobId } = message.body;
+					const causePretty = Cause.pretty(cause);
 					console.error(
 						`Unexpected conversion queue failure for job ${jobId} (attempt ${message.attempts})`,
-						Cause.pretty(cause),
+						causePretty,
 					);
 
-					if (message.attempts >= CONVERSION_MAX_ATTEMPTS) {
-						message.ack();
-						return;
-					}
+					yield* updateConversionJobStatus(jobId, {
+						status: "failed",
+						errorMessage: causePretty,
+					}).pipe(Effect.catchAll(() => Effect.void));
 
-					message.retry();
+					yield* Effect.sync(() => {
+						message.ack();
+					});
 				}),
 			),
 		);

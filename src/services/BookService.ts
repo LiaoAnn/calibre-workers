@@ -574,7 +574,6 @@ export const createBookFromUpload = (input: CreateBookFromUploadInput) =>
 export interface UpdateBookInput {
 	bookId: string;
 	title: string;
-	/** Multiple authors, comma-separated in the UI. TODO: individual author pages */
 	authors: string[];
 	description?: string;
 	publisher?: string;

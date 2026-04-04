@@ -4,11 +4,11 @@ import { env } from "cloudflare:workers";
 import { getRandom } from "@cloudflare/containers";
 import { Context, Data, Duration, Effect, Layer, Schedule } from "effect";
 
-export class ConversionError extends Data.TaggedError("ConversionError")<{
+class ConversionError extends Data.TaggedError("ConversionError")<{
 	readonly cause: unknown;
 }> {}
 
-export interface ContainerProcessOptions {
+interface ContainerProcessOptions {
 	formatFrom: string;
 	formatTo: string;
 	metadata?: {
@@ -23,12 +23,12 @@ export interface ContainerProcessOptions {
 	};
 }
 
-export interface ContainerProcessResult {
+interface ContainerProcessResult {
 	bytes: ArrayBuffer;
 	contentType: string;
 }
 
-export interface ConverterContainerService {
+interface ConverterContainerService {
 	process(
 		bytes: ArrayBuffer,
 		options: ContainerProcessOptions,

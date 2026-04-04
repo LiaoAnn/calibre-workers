@@ -9,9 +9,8 @@ class ParseError extends Data.TaggedError("ParseError")<{
 	readonly cause: unknown;
 }> {}
 
-export interface EpubMetadata {
+interface EpubMetadata {
 	title?: string;
-	/** Multiple authors; comma-joined for display. TODO: link to individual author profile pages */
 	authors?: string[];
 	description?: string;
 	publisher?: string;
@@ -23,7 +22,7 @@ export interface EpubMetadata {
 	identifiers?: { type: string; value: string }[];
 }
 
-export interface EpubCover {
+interface EpubCover {
 	data: Uint8Array;
 	mimeType: string;
 }

@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { Cause, Duration, Effect, Either, Exit } from "effect";
-import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
+import type { BookFileFormat } from "#/db/schema";
 import { AppLayerWithContainer } from "#/layers/AppLayer";
 import { ConverterContainerContext } from "#/layers/ConverterContainerLayer";
 import { r2Keys } from "#/lib/r2-keys";
@@ -19,7 +19,6 @@ export interface MetadataQueueMessage {
 	jobId: string;
 }
 
-const METADATA_MAX_ATTEMPTS = 3;
 const METADATA_TASK_TIMEOUT = Duration.minutes(10);
 
 function mimeTypeForFormat(format: string) {
@@ -193,34 +192,23 @@ const runMetadataSync = (jobId: string) =>
 
 const settleMetadataFailure = ({
 	jobId,
-	attempts,
 	message,
 	errorMessage,
 }: {
 	jobId: string;
-	attempts: number;
 	message: Message<MetadataQueueMessage>;
 	errorMessage: string;
 }) =>
 	Effect.gen(function* () {
-		const finalAttempt = attempts >= METADATA_MAX_ATTEMPTS;
-		const fallbackJobStatus = finalAttempt ? "failed" : "pending";
-		const fallbackFileStatus: MetadataSyncStatus = finalAttempt
-			? "failed"
-			: "pending";
-		const fallbackSourceStatuses: MetadataSyncStatus[] = finalAttempt
-			? ["pending", "processing"]
-			: ["pending", "processing", "failed"];
-
 		yield* Effect.sync(() => {
 			console.error(
-				`Metadata queue failed for job ${jobId} (attempt ${attempts})`,
+				`Metadata queue failed for job ${jobId} (attempt ${message.attempts})`,
 				errorMessage,
 			);
 		});
 
 		yield* updateMetadataJobStatus(jobId, {
-			status: fallbackJobStatus,
+			status: "failed",
 			errorMessage,
 		}).pipe(Effect.catchAll(() => Effect.void));
 
@@ -228,18 +216,13 @@ const settleMetadataFailure = ({
 		if (Either.isRight(jobResult)) {
 			yield* setBookFilesMetadataStatus({
 				bookId: jobResult.right.bookId,
-				status: fallbackFileStatus,
-				onlyIfCurrentStatusIn: fallbackSourceStatuses,
+				status: "failed",
+				onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
 			}).pipe(Effect.catchAll(() => Effect.void));
 		}
 
 		yield* Effect.sync(() => {
-			if (finalAttempt) {
-				message.ack();
-				return;
-			}
-
-			message.retry();
+			message.ack();
 		});
 	});
 
@@ -261,25 +244,36 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 
 			yield* settleMetadataFailure({
 				jobId,
-				attempts: message.attempts,
 				message,
 				errorMessage: Cause.pretty(exit.cause),
 			});
 		}).pipe(
 			Effect.catchAllCause((cause) =>
-				Effect.sync(() => {
+				Effect.gen(function* () {
 					const { jobId } = message.body;
+					const causePretty = Cause.pretty(cause);
 					console.error(
 						`Unexpected metadata queue failure for job ${jobId} (attempt ${message.attempts})`,
-						Cause.pretty(cause),
+						causePretty,
 					);
 
-					if (message.attempts >= METADATA_MAX_ATTEMPTS) {
-						message.ack();
-						return;
+					yield* updateMetadataJobStatus(jobId, {
+						status: "failed",
+						errorMessage: causePretty,
+					}).pipe(Effect.catchAll(() => Effect.void));
+
+					const jobResult = yield* Effect.either(getMetadataJob(jobId));
+					if (Either.isRight(jobResult)) {
+						yield* setBookFilesMetadataStatus({
+							bookId: jobResult.right.bookId,
+							status: "failed",
+							onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
+						}).pipe(Effect.catchAll(() => Effect.void));
 					}
 
-					message.retry();
+					yield* Effect.sync(() => {
+						message.ack();
+					});
 				}),
 			),
 		);
