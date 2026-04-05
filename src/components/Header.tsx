@@ -80,6 +80,13 @@ export default function Header() {
 					>
 						Home
 					</Link>
+					<Link
+						to="/shelves"
+						className="nav-link"
+						activeProps={{ className: "nav-link is-active" }}
+					>
+						書架
+					</Link>
 				</div>
 
 				{/* Right-side actions */}

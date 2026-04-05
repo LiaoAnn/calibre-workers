@@ -1,18 +1,37 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	Link,
 	redirect,
 	useRouter,
 } from "@tanstack/react-router";
-import { ArrowDownToLine, Loader2, Pencil, RefreshCw } from "lucide-react";
-import { useEffect, useRef } from "react";
+import {
+	ArrowDownToLine,
+	BookmarkPlus,
+	Loader2,
+	Pencil,
+	RefreshCw,
+} from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
 import { useConversionTasks } from "#/hooks/useConversionTasks";
+import { shelvesQueryKeys, useShelves } from "#/hooks/useShelves";
 import { getPageTitle } from "#/lib/utils";
 import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import { getBookByIdServerFn } from "#/server/books";
+import {
+	addBooksToShelfServerFn,
+	listBookShelfIdsServerFn,
+} from "#/server/shelves";
 
 const isMetadataSyncing = (status: MetadataSyncStatus) =>
 	status === "pending" || status === "processing";
@@ -46,7 +65,24 @@ export const Route = createFileRoute("/books/$bookId")({
 function BookDetailPage() {
 	const { book, session } = Route.useLoaderData();
 	const router = useRouter();
+	const queryClient = useQueryClient();
 	const conversionTargets = ["kepub", "azw3", "mobi"] as BookFileFormat[];
+	const { data: shelves = [] } = useShelves();
+	const bookShelfIdsQueryKey = [
+		...shelvesQueryKeys.all,
+		"book-membership",
+		book.id,
+	] as const;
+	const { data: bookShelfIds = [], isPending: isBookShelfIdsPending } =
+		useQuery({
+			queryKey: bookShelfIdsQueryKey,
+			queryFn: () =>
+				listBookShelfIdsServerFn({
+					data: {
+						bookId: book.id,
+					},
+				}),
+		});
 
 	const authors =
 		book.authors
@@ -65,6 +101,43 @@ function BookDetailPage() {
 	const hasActiveMetadataSync = book.files.some((file) =>
 		isMetadataSyncing(file.metadataStatus),
 	);
+	const availableShelves = useMemo(() => {
+		const shelfIdSet = new Set(bookShelfIds);
+		return shelves.filter((shelf) => !shelfIdSet.has(shelf.id));
+	}, [bookShelfIds, shelves]);
+
+	const addBookToShelfMutation = useMutation({
+		mutationFn: ({
+			shelfId,
+			shelfName,
+		}: {
+			shelfId: string;
+			shelfName: string;
+		}) =>
+			addBooksToShelfServerFn({
+				data: {
+					shelfId,
+					bookIds: [book.id],
+				},
+			}).then((result) => ({ ...result, shelfId, shelfName })),
+		onSuccess: ({ addedCount, shelfId, shelfName }) => {
+			if (addedCount > 0) {
+				toast.success(`已將書籍加入「${shelfName}」`);
+				queryClient.setQueryData<string[]>(bookShelfIdsQueryKey, (previous) => {
+					const current = previous ?? [];
+					return current.includes(shelfId) ? current : [...current, shelfId];
+				});
+			} else {
+				toast.message(`「${shelfName}」已包含這本書`);
+			}
+
+			void queryClient.invalidateQueries({ queryKey: shelvesQueryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: bookShelfIdsQueryKey });
+		},
+		onError: (error) => {
+			toast.error(error instanceof Error ? error.message : "加入書架失敗");
+		},
+	});
 
 	const { activeTasks: activeConversionTasks, triggerConversion } =
 		useConversionTasks({ bookId: book.id, limit: 10 });
@@ -135,6 +208,75 @@ function BookDetailPage() {
 								/>
 							) : null}
 						</div>
+
+						{session?.user ? (
+							<div className="mt-4 space-y-2">
+								<DropdownMenu>
+									<DropdownMenuTrigger asChild>
+										<Button
+											variant="outline"
+											size="sm"
+											className="w-full justify-start gap-2"
+											disabled={addBookToShelfMutation.isPending}
+										>
+											<BookmarkPlus size={14} />
+											加入書架
+										</Button>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent align="start" className="min-w-56">
+										{isBookShelfIdsPending ? (
+											<DropdownMenuItem disabled>
+												讀取書架中...
+											</DropdownMenuItem>
+										) : shelves.length === 0 ? (
+											<>
+												<DropdownMenuItem disabled>
+													尚未建立書架
+												</DropdownMenuItem>
+												<DropdownMenuItem asChild>
+													<Link to="/shelves">前往建立書架</Link>
+												</DropdownMenuItem>
+											</>
+										) : availableShelves.length > 0 ? (
+											availableShelves.map((shelf) => (
+												<DropdownMenuItem
+													key={`${book.id}-${shelf.id}`}
+													className="cursor-pointer"
+													onSelect={(event) => {
+														event.preventDefault();
+														if (addBookToShelfMutation.isPending) {
+															return;
+														}
+														addBookToShelfMutation.mutate({
+															shelfId: shelf.id,
+															shelfName: shelf.name,
+														});
+													}}
+												>
+													{shelf.name}
+												</DropdownMenuItem>
+											))
+										) : (
+											<DropdownMenuItem disabled>
+												已加入所有書架
+											</DropdownMenuItem>
+										)}
+									</DropdownMenuContent>
+								</DropdownMenu>
+
+								<Button
+									variant="outline"
+									size="sm"
+									asChild
+									className="w-full justify-start gap-2"
+								>
+									<Link to="/books/$bookId/edit" params={{ bookId: book.id }}>
+										<Pencil />
+										編輯 Metadata
+									</Link>
+								</Button>
+							</div>
+						) : null}
 
 						{book.files.length > 0 ? (
 							<div className="mt-4 space-y-2">
@@ -221,24 +363,9 @@ function BookDetailPage() {
 
 					{/* Right column: metadata */}
 					<div className="min-w-0 flex-1">
-						<div className="flex items-center justify-between gap-4">
-							<h1 className="text-3xl font-bold leading-tight text-[var(--sea-ink)]">
-								{book.title}
-							</h1>
-							{session?.user ? (
-								<Button
-									variant="outline"
-									size="sm"
-									asChild
-									className="justify-start gap-2"
-								>
-									<Link to="/books/$bookId/edit" params={{ bookId: book.id }}>
-										<Pencil />
-										編輯 Metadata
-									</Link>
-								</Button>
-							) : null}
-						</div>
+						<h1 className="text-3xl font-bold leading-tight text-[var(--sea-ink)]">
+							{book.title}
+						</h1>
 
 						{authors.length > 0 ? (
 							<p className="mt-2 text-base text-[var(--sea-ink-soft)]">

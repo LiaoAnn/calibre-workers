@@ -183,6 +183,82 @@ export const booksTagsLink = sqliteTable(
 	],
 );
 
+// TODO(shelves): implement end-to-end visibility behavior in service/API/UI.
+export type ShelfVisibility = "private" | "public" | "shared";
+export type ShelfMemberRole = "owner" | "editor" | "viewer";
+
+export const shelves = sqliteTable(
+	"shelves",
+	{
+		id: text("id").primaryKey(),
+		name: text("name").notNull(),
+		visibility: text("visibility")
+			.$type<ShelfVisibility>()
+			.notNull()
+			.default("private"),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [index("shelves_visibility_idx").on(table.visibility)],
+);
+
+export const shelfBooks = sqliteTable(
+	"shelf_books",
+	{
+		shelfId: text("shelf_id")
+			.notNull()
+			.references(() => shelves.id, { onDelete: "cascade" }),
+		bookId: text("book_id")
+			.notNull()
+			.references(() => books.id, { onDelete: "cascade" }),
+		order: integer("display_order").notNull().default(0),
+		addedAt: integer("added_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.shelfId, table.bookId] }),
+		index("shelf_books_shelf_idx").on(table.shelfId),
+		index("shelf_books_book_idx").on(table.bookId),
+		index("shelf_books_order_idx").on(table.shelfId, table.order),
+	],
+);
+
+export const shelfMembers = sqliteTable(
+	"shelf_members",
+	{
+		// TODO(shelves): implement invite/share member flows and role management UI/API.
+		shelfId: text("shelf_id")
+			.notNull()
+			.references(() => shelves.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		role: text("role").$type<ShelfMemberRole>().notNull().default("viewer"),
+		addedByUserId: text("added_by_user_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.shelfId, table.userId] }),
+		index("shelf_members_shelf_idx").on(table.shelfId),
+		index("shelf_members_user_idx").on(table.userId),
+		index("shelf_members_role_idx").on(table.role),
+	],
+);
+
 export const series = sqliteTable(
 	"series",
 	{
@@ -260,6 +336,7 @@ export const bookFiles = sqliteTable(
 
 export const booksRelations = relations(books, ({ one, many }) => ({
 	tags: many(booksTagsLink),
+	shelfLinks: many(shelfBooks),
 	series: one(series, { fields: [books.seriesId], references: [series.id] }),
 	publisher: one(publishers, {
 		fields: [books.publisherId],
@@ -284,6 +361,39 @@ export const booksTagsLinkRelations = relations(booksTagsLink, ({ one }) => ({
 	tag: one(tags, {
 		fields: [booksTagsLink.tagId],
 		references: [tags.id],
+	}),
+}));
+
+export const shelvesRelations = relations(shelves, ({ many }) => ({
+	bookLinks: many(shelfBooks),
+	members: many(shelfMembers),
+}));
+
+export const shelfBooksRelations = relations(shelfBooks, ({ one }) => ({
+	shelf: one(shelves, {
+		fields: [shelfBooks.shelfId],
+		references: [shelves.id],
+	}),
+	book: one(books, {
+		fields: [shelfBooks.bookId],
+		references: [books.id],
+	}),
+}));
+
+export const shelfMembersRelations = relations(shelfMembers, ({ one }) => ({
+	shelf: one(shelves, {
+		fields: [shelfMembers.shelfId],
+		references: [shelves.id],
+	}),
+	member: one(user, {
+		fields: [shelfMembers.userId],
+		references: [user.id],
+		relationName: "shelfMemberUser",
+	}),
+	addedBy: one(user, {
+		fields: [shelfMembers.addedByUserId],
+		references: [user.id],
+		relationName: "shelfMemberAddedByUser",
 	}),
 }));
 

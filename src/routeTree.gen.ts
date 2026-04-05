@@ -9,11 +9,14 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ShelvesRouteImport } from './routes/shelves'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as PendingApprovalRouteImport } from './routes/pending-approval'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ShelvesIndexRouteImport } from './routes/shelves.index'
+import { Route as ShelvesShelfIdRouteImport } from './routes/shelves.$shelfId'
 import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
 import { Route as AuthorNameRouteImport } from './routes/author.$name'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
@@ -22,6 +25,11 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
 import { Route as ApiBooksBookIdFilesFileIdRouteImport } from './routes/api/books/$bookId/files/$fileId'
 
+const ShelvesRoute = ShelvesRouteImport.update({
+  id: '/shelves',
+  path: '/shelves',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -46,6 +54,16 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ShelvesIndexRoute = ShelvesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShelvesRoute,
+} as any)
+const ShelvesShelfIdRoute = ShelvesShelfIdRouteImport.update({
+  id: '/$shelfId',
+  path: '/$shelfId',
+  getParentRoute: () => ShelvesRoute,
 } as any)
 const BooksBookIdRoute = BooksBookIdRouteImport.update({
   id: '/books/$bookId',
@@ -90,9 +108,12 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/pending-approval': typeof PendingApprovalRoute
   '/register': typeof RegisterRoute
+  '/shelves': typeof ShelvesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
+  '/shelves/$shelfId': typeof ShelvesShelfIdRoute
+  '/shelves/': typeof ShelvesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
@@ -107,6 +128,8 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
+  '/shelves/$shelfId': typeof ShelvesShelfIdRoute
+  '/shelves': typeof ShelvesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
@@ -119,9 +142,12 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/pending-approval': typeof PendingApprovalRoute
   '/register': typeof RegisterRoute
+  '/shelves': typeof ShelvesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
+  '/shelves/$shelfId': typeof ShelvesShelfIdRoute
+  '/shelves/': typeof ShelvesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId_/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
@@ -135,9 +161,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/pending-approval'
     | '/register'
+    | '/shelves'
     | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
+    | '/shelves/$shelfId'
+    | '/shelves/'
     | '/api/auth/$'
     | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
@@ -152,6 +181,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
+    | '/shelves/$shelfId'
+    | '/shelves'
     | '/api/auth/$'
     | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
@@ -163,9 +194,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/pending-approval'
     | '/register'
+    | '/shelves'
     | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
+    | '/shelves/$shelfId'
+    | '/shelves/'
     | '/api/auth/$'
     | '/books/$bookId_/edit'
     | '/api/books/$bookId/cover'
@@ -178,6 +212,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PendingApprovalRoute: typeof PendingApprovalRoute
   RegisterRoute: typeof RegisterRoute
+  ShelvesRoute: typeof ShelvesRouteWithChildren
   AdminUsersRoute: typeof AdminUsersRoute
   AuthorNameRoute: typeof AuthorNameRoute
   BooksBookIdRoute: typeof BooksBookIdRoute
@@ -189,6 +224,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/shelves': {
+      id: '/shelves'
+      path: '/shelves'
+      fullPath: '/shelves'
+      preLoaderRoute: typeof ShelvesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -223,6 +265,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/shelves/': {
+      id: '/shelves/'
+      path: '/'
+      fullPath: '/shelves/'
+      preLoaderRoute: typeof ShelvesIndexRouteImport
+      parentRoute: typeof ShelvesRoute
+    }
+    '/shelves/$shelfId': {
+      id: '/shelves/$shelfId'
+      path: '/$shelfId'
+      fullPath: '/shelves/$shelfId'
+      preLoaderRoute: typeof ShelvesShelfIdRouteImport
+      parentRoute: typeof ShelvesRoute
     }
     '/books/$bookId': {
       id: '/books/$bookId'
@@ -276,12 +332,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ShelvesRouteChildren {
+  ShelvesShelfIdRoute: typeof ShelvesShelfIdRoute
+  ShelvesIndexRoute: typeof ShelvesIndexRoute
+}
+
+const ShelvesRouteChildren: ShelvesRouteChildren = {
+  ShelvesShelfIdRoute: ShelvesShelfIdRoute,
+  ShelvesIndexRoute: ShelvesIndexRoute,
+}
+
+const ShelvesRouteWithChildren =
+  ShelvesRoute._addFileChildren(ShelvesRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   LoginRoute: LoginRoute,
   PendingApprovalRoute: PendingApprovalRoute,
   RegisterRoute: RegisterRoute,
+  ShelvesRoute: ShelvesRouteWithChildren,
   AdminUsersRoute: AdminUsersRoute,
   AuthorNameRoute: AuthorNameRoute,
   BooksBookIdRoute: BooksBookIdRoute,
