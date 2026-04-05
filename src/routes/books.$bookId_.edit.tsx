@@ -5,6 +5,7 @@ import {
 	redirect,
 	useNavigate,
 } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
@@ -300,14 +301,17 @@ function EditBookPage() {
 	return (
 		<main className="page-wrap px-4 py-12">
 			<div className="mx-auto w-full max-w-2xl">
-				<div className="mb-6 flex items-center gap-4">
-					<Button variant="link" asChild className="h-auto p-0 text-sm">
+				<div className="mb-4">
+					<Button asChild variant="ghost" size="sm" className="gap-2 pl-0">
 						<Link to="/books/$bookId" params={{ bookId }}>
-							← 返回書本詳情
+							<ArrowLeft size={14} />
+							返回書本詳情
 						</Link>
 					</Button>
-					<h1 className="text-2xl font-bold text-(--sea-ink)">編輯 Metadata</h1>
 				</div>
+				<h1 className="mb-6 text-2xl font-bold text-(--sea-ink)">
+					編輯 Metadata
+				</h1>
 
 				<form onSubmit={handleSubmit} className="space-y-5">
 					{/* 書名 */}
