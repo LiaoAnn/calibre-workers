@@ -125,7 +125,7 @@ function KoboSettingsPage() {
 					<Button
 						type="button"
 						disabled={createKoboTokenMutation.isPending}
-						className="w-fit"
+						className="w-full sm:w-fit"
 						onClick={handleCreateToken}
 					>
 						{createKoboTokenMutation.isPending ? "建立中..." : "產生新 Token"}
@@ -148,7 +148,7 @@ function KoboSettingsPage() {
 										key={token.id}
 										className="space-y-3 rounded-lg border border-(--line) p-4"
 									>
-										<div className="flex items-center gap-2">
+										<div className="flex flex-wrap items-center gap-2">
 											<Badge>啟用中</Badge>
 											<p className="text-xs text-muted-foreground">
 												建立於 {formatDateTime(token.createdAt)}
@@ -157,15 +157,16 @@ function KoboSettingsPage() {
 										<code className="block w-full break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
 											{token.token}
 										</code>
-										<div className="flex items-center justify-between gap-4">
+										<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 											<p className="text-xs text-muted-foreground">
 												最後更新 {formatDateTime(token.updatedAt)}
 											</p>
-											<div className="flex items-center gap-2">
+											<div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
 												<Button
 													type="button"
 													variant="outline"
 													size="sm"
+													className="flex-1 sm:flex-none"
 													onClick={() => {
 														setEndpointDialogToken(token.token);
 													}}
@@ -176,6 +177,7 @@ function KoboSettingsPage() {
 													type="button"
 													variant="destructive"
 													size="sm"
+													className="flex-1 sm:flex-none"
 													disabled={isRevoking}
 													onClick={() => {
 														revokeKoboTokenMutation.mutate({
@@ -219,7 +221,7 @@ function KoboSettingsPage() {
 								return (
 									<div
 										key={shelf.shelfId}
-										className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-(--line) p-4"
+										className="flex flex-col items-start gap-3 rounded-lg border border-(--line) p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
 									>
 										<div className="space-y-1">
 											<div className="flex flex-wrap items-center gap-2">
@@ -240,6 +242,7 @@ function KoboSettingsPage() {
 										<Button
 											type="button"
 											variant={shelf.enableKoboSync ? "secondary" : "outline"}
+											className="w-full sm:w-auto"
 											disabled={isUpdating || !canEdit}
 											onClick={() => {
 												setShelfKoboSyncMutation.mutate({
