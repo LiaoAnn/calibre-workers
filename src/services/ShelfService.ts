@@ -183,6 +183,77 @@ export const listShelves = (userId: string) =>
 		);
 	});
 
+export const listShelfKoboSyncSettings = (userId: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		return yield* database
+			.select({
+				shelfId: schema.shelves.id,
+				shelfName: schema.shelves.name,
+				enableKoboSync: schema.shelfMembers.enableKoboSync,
+				memberRole: schema.shelfMembers.role,
+				updatedAt: schema.shelfMembers.updatedAt,
+			})
+			.from(schema.shelfMembers)
+			.innerJoin(
+				schema.shelves,
+				eq(schema.shelves.id, schema.shelfMembers.shelfId),
+			)
+			.where(eq(schema.shelfMembers.userId, userId))
+			.orderBy(asc(schema.shelves.name));
+	});
+
+export const setShelfKoboSync = ({
+	userId,
+	shelfId,
+	enabled,
+}: {
+	userId: string;
+	shelfId: string;
+	enabled: boolean;
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const rows = yield* database
+			.select({
+				enableKoboSync: schema.shelfMembers.enableKoboSync,
+			})
+			.from(schema.shelfMembers)
+			.where(
+				and(
+					eq(schema.shelfMembers.shelfId, shelfId),
+					eq(schema.shelfMembers.userId, userId),
+				),
+			)
+			.limit(1);
+
+		const membership = rows[0];
+		if (!membership) {
+			return yield* Effect.fail(new ShelfAccessDenied({ shelfId, userId }));
+		}
+
+		yield* database
+			.update(schema.shelfMembers)
+			.set({ enableKoboSync: enabled })
+			.where(
+				and(
+					eq(schema.shelfMembers.shelfId, shelfId),
+					eq(schema.shelfMembers.userId, userId),
+				),
+			);
+
+		if (membership.enableKoboSync && !enabled) {
+			yield* database.insert(schema.shelfArchive).values({
+				id: crypto.randomUUID(),
+				shelfId,
+				userId,
+				lastModified: new Date(),
+			});
+		}
+
+		return { shelfId, enabled };
+	});
+
 export const listBookShelfIds = ({
 	userId,
 	bookId,

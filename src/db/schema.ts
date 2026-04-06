@@ -104,6 +104,11 @@ export const verification = sqliteTable(
 export const userRelations = relations(user, ({ many }) => ({
 	sessions: many(session),
 	accounts: many(account),
+	koboAuthTokens: many(koboAuthTokens),
+	archivedBooks: many(archivedBooks),
+	koboSyncedBooks: many(koboSyncedBooks),
+	koboReadingStates: many(koboReadingStates),
+	shelfArchiveEntries: many(shelfArchive),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -186,7 +191,27 @@ export const booksTagsLink = sqliteTable(
 // TODO(shelves): implement end-to-end visibility behavior in service/API/UI.
 export type ShelfVisibility = "private" | "public" | "shared";
 export type ShelfMemberRole = "owner" | "editor" | "viewer";
+export type KoboReadStatus = "ReadyToRead" | "Reading" | "Finished";
 
+export type KoboLoggedBody =
+	| { type: "empty" }
+	| { type: "json"; value: unknown; truncated?: boolean }
+	| { type: "form"; value: Record<string, unknown>; truncated?: boolean }
+	| {
+			type: "text";
+			contentType: string;
+			value: string;
+			truncated?: boolean;
+	  }
+	| {
+			type: "binary";
+			contentType: string;
+			encoding: "base64";
+			value: string;
+			truncated?: boolean;
+	  };
+
+// TODO: use deleted_at and remove shelfArchive after implementing proper sync and tombstone handling.
 export const shelves = sqliteTable(
 	"shelves",
 	{
@@ -243,6 +268,9 @@ export const shelfMembers = sqliteTable(
 		addedByUserId: text("added_by_user_id").references(() => user.id, {
 			onDelete: "set null",
 		}),
+		enableKoboSync: integer("enable_kobo_sync", { mode: "boolean" })
+			.default(false)
+			.notNull(),
 		createdAt: integer("created_at", { mode: "timestamp_ms" })
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.notNull(),
@@ -256,6 +284,222 @@ export const shelfMembers = sqliteTable(
 		index("shelf_members_shelf_idx").on(table.shelfId),
 		index("shelf_members_user_idx").on(table.userId),
 		index("shelf_members_role_idx").on(table.role),
+		index("shelf_members_enable_kobo_sync_idx").on(
+			table.userId,
+			table.enableKoboSync,
+		),
+	],
+);
+
+// Deletion tombstone used for sync: after a shelf disappears, device still
+// needs a "DeletedTag" event, so we keep a per-user record temporarily.
+export const shelfArchive = sqliteTable(
+	"shelf_archive",
+	{
+		id: text("id").primaryKey(),
+		shelfId: text("shelf_id").notNull(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		lastModified: integer("last_modified", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("shelf_archive_user_idx").on(table.userId),
+		index("shelf_archive_shelf_idx").on(table.shelfId),
+		index("shelf_archive_last_modified_idx").on(table.lastModified),
+	],
+);
+
+export const koboAuthTokens = sqliteTable(
+	"kobo_auth_tokens",
+	{
+		id: text("id").primaryKey(),
+		token: text("token").notNull().unique(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("kobo_auth_tokens_user_idx").on(table.userId),
+		index("kobo_auth_tokens_revoked_idx").on(table.revokedAt),
+	],
+);
+
+export const koboSyncedBooks = sqliteTable(
+	"kobo_synced_books",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		bookId: text("book_id")
+			.notNull()
+			.references(() => books.id, { onDelete: "cascade" }),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("kobo_synced_books_user_idx").on(table.userId),
+		index("kobo_synced_books_book_idx").on(table.bookId),
+		index("kobo_synced_books_user_book_idx").on(table.userId, table.bookId),
+		index("kobo_synced_books_created_idx").on(table.createdAt),
+	],
+);
+
+// Archive status is device/user specific. We keep it separate from books to
+// avoid mutating global metadata for all users.
+export const archivedBooks = sqliteTable(
+	"archived_books",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		bookId: text("book_id")
+			.notNull()
+			.references(() => books.id, { onDelete: "cascade" }),
+		isArchived: integer("is_archived", { mode: "boolean" })
+			.default(true)
+			.notNull(),
+		lastModified: integer("last_modified", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("archived_books_user_idx").on(table.userId),
+		index("archived_books_book_idx").on(table.bookId),
+		index("archived_books_user_book_idx").on(table.userId, table.bookId),
+		index("archived_books_last_modified_idx").on(table.lastModified),
+	],
+);
+
+// Kobo uses a state-level lastModified/priority timestamp that is distinct
+// from bookmark/statistics update timestamps.
+export const koboReadingStates = sqliteTable(
+	"kobo_reading_states",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		bookId: text("book_id")
+			.notNull()
+			.references(() => books.id, { onDelete: "cascade" }),
+		status: text("status")
+			.$type<KoboReadStatus>()
+			.default("ReadyToRead")
+			.notNull(),
+		lastTimeStartedReading: integer("last_time_started_reading", {
+			mode: "timestamp_ms",
+		}),
+		timesStartedReading: integer("times_started_reading").default(0).notNull(),
+		lastModified: integer("last_modified", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+		priorityTimestamp: integer("priority_timestamp", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("kobo_reading_states_user_idx").on(table.userId),
+		index("kobo_reading_states_book_idx").on(table.bookId),
+		index("kobo_reading_states_user_book_idx").on(table.userId, table.bookId),
+		index("kobo_reading_states_last_modified_idx").on(table.lastModified),
+	],
+);
+
+export const koboBookmarks = sqliteTable(
+	"kobo_bookmarks",
+	{
+		// Separate 1:1 table to keep bookmark-specific timestamp and sparse fields.
+		koboReadingStateId: text("kobo_reading_state_id")
+			.primaryKey()
+			.references(() => koboReadingStates.id, { onDelete: "cascade" }),
+		lastModified: integer("last_modified", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+		locationSource: text("location_source"),
+		locationType: text("location_type"),
+		locationValue: text("location_value"),
+		progressPercent: real("progress_percent"),
+		contentSourceProgressPercent: real("content_source_progress_percent"),
+	},
+	(table) => [index("kobo_bookmarks_last_modified_idx").on(table.lastModified)],
+);
+
+export const koboStatistics = sqliteTable(
+	"kobo_statistics",
+	{
+		// Separate 1:1 table to mirror Kobo's Statistics object lifecycle.
+		koboReadingStateId: text("kobo_reading_state_id")
+			.primaryKey()
+			.references(() => koboReadingStates.id, { onDelete: "cascade" }),
+		lastModified: integer("last_modified", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+		remainingTimeMinutes: integer("remaining_time_minutes"),
+		spentReadingMinutes: integer("spent_reading_minutes"),
+	},
+	(table) => [
+		index("kobo_statistics_last_modified_idx").on(table.lastModified),
+	],
+);
+
+export const koboApiLogs = sqliteTable(
+	"kobo_api_logs",
+	{
+		id: text("id").primaryKey(),
+		authTokenId: text("auth_token_id").references(() => koboAuthTokens.id, {
+			onDelete: "set null",
+		}),
+		method: text("method").notNull(),
+		path: text("path").notNull(),
+		query: text("query"),
+		isHandledInternally: integer("is_handled_internally", { mode: "boolean" })
+			.default(false)
+			.notNull(),
+		requestHeaders: text("request_headers", { mode: "json" })
+			.$type<Record<string, string>>()
+			.notNull(),
+		requestBody: text("request_body", { mode: "json" })
+			.$type<KoboLoggedBody>()
+			.notNull(),
+		responseStatus: integer("response_status").notNull(),
+		responseHeaders: text("response_headers", { mode: "json" })
+			.$type<Record<string, string>>()
+			.notNull(),
+		responseBody: text("response_body", { mode: "json" })
+			.$type<KoboLoggedBody>()
+			.notNull(),
+		createdAt: integer("created_at", { mode: "timestamp_ms" })
+			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+			.notNull(),
+	},
+	(table) => [
+		index("kobo_api_logs_auth_token_idx").on(table.authTokenId),
+		index("kobo_api_logs_created_idx").on(table.createdAt),
+		index("kobo_api_logs_path_idx").on(table.path),
 	],
 );
 
@@ -345,6 +589,9 @@ export const booksRelations = relations(books, ({ one, many }) => ({
 	identifiers: many(identifiers),
 	comments: many(comments),
 	files: many(bookFiles),
+	archivedBooks: many(archivedBooks),
+	koboSyncedBooks: many(koboSyncedBooks),
+	koboReadingStates: many(koboReadingStates),
 	conversionJobs: many(conversionJobs),
 	metadataJobs: many(metadataJobs),
 }));
@@ -394,6 +641,92 @@ export const shelfMembersRelations = relations(shelfMembers, ({ one }) => ({
 		fields: [shelfMembers.addedByUserId],
 		references: [user.id],
 		relationName: "shelfMemberAddedByUser",
+	}),
+}));
+
+export const shelfArchiveRelations = relations(shelfArchive, ({ one }) => ({
+	user: one(user, {
+		fields: [shelfArchive.userId],
+		references: [user.id],
+	}),
+}));
+
+export const koboAuthTokensRelations = relations(
+	koboAuthTokens,
+	({ one, many }) => ({
+		user: one(user, {
+			fields: [koboAuthTokens.userId],
+			references: [user.id],
+		}),
+		apiLogs: many(koboApiLogs),
+	}),
+);
+
+export const koboSyncedBooksRelations = relations(
+	koboSyncedBooks,
+	({ one }) => ({
+		user: one(user, {
+			fields: [koboSyncedBooks.userId],
+			references: [user.id],
+		}),
+		book: one(books, {
+			fields: [koboSyncedBooks.bookId],
+			references: [books.id],
+		}),
+	}),
+);
+
+export const archivedBooksRelations = relations(archivedBooks, ({ one }) => ({
+	user: one(user, {
+		fields: [archivedBooks.userId],
+		references: [user.id],
+	}),
+	book: one(books, {
+		fields: [archivedBooks.bookId],
+		references: [books.id],
+	}),
+}));
+
+export const koboReadingStatesRelations = relations(
+	koboReadingStates,
+	({ one }) => ({
+		user: one(user, {
+			fields: [koboReadingStates.userId],
+			references: [user.id],
+		}),
+		book: one(books, {
+			fields: [koboReadingStates.bookId],
+			references: [books.id],
+		}),
+		bookmark: one(koboBookmarks, {
+			fields: [koboReadingStates.id],
+			references: [koboBookmarks.koboReadingStateId],
+		}),
+		statistics: one(koboStatistics, {
+			fields: [koboReadingStates.id],
+			references: [koboStatistics.koboReadingStateId],
+		}),
+	}),
+);
+
+export const koboBookmarksRelations = relations(koboBookmarks, ({ one }) => ({
+	readingState: one(koboReadingStates, {
+		fields: [koboBookmarks.koboReadingStateId],
+		references: [koboReadingStates.id],
+	}),
+}));
+
+export const koboStatisticsRelations = relations(koboStatistics, ({ one }) => ({
+	readingState: one(koboReadingStates, {
+		fields: [koboStatistics.koboReadingStateId],
+		references: [koboReadingStates.id],
+	}),
+}));
+
+export const koboApiLogsRelations = relations(koboApiLogs, ({ one }) => ({
+	authToken: one(koboAuthTokens, {
+		fields: [koboApiLogs.authTokenId],
+		references: [koboAuthTokens.id],
 	}),
 }));
 

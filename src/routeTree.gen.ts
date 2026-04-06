@@ -17,13 +17,29 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShelvesIndexRouteImport } from './routes/shelves.index'
 import { Route as ShelvesShelfIdRouteImport } from './routes/shelves.$shelfId'
+import { Route as SettingsKoboRouteImport } from './routes/settings/kobo'
 import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
 import { Route as AuthorNameRouteImport } from './routes/author.$name'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
+import { Route as ApiKoboTokenV1InitializationRouteImport } from './routes/api/kobo/$token/v1/initialization'
+import { Route as ApiKoboTokenV1SplatRouteImport } from './routes/api/kobo/$token/v1/$'
 import { Route as ApiBooksBookIdFilesFileIdRouteImport } from './routes/api/books/$bookId/files/$fileId'
+import { Route as ApiKoboTokenV1LibraryTagsRouteImport } from './routes/api/kobo/$token/v1/library/tags'
+import { Route as ApiKoboTokenV1LibrarySyncRouteImport } from './routes/api/kobo/$token/v1/library/sync'
+import { Route as ApiKoboTokenV1LibraryBookUuidRouteImport } from './routes/api/kobo/$token/v1/library/$bookUuid'
+import { Route as ApiKoboTokenV1AuthRefreshRouteImport } from './routes/api/kobo/$token/v1/auth/refresh'
+import { Route as ApiKoboTokenV1AuthDeviceRouteImport } from './routes/api/kobo/$token/v1/auth/device'
+import { Route as ApiKoboTokenDownloadBookIdBookFormatRouteImport } from './routes/api/kobo/$token/download/$bookId/$bookFormat'
+import { Route as ApiKoboTokenV1LibraryTagsTagIdRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId'
+import { Route as ApiKoboTokenV1LibraryIdsStateRouteImport } from './routes/api/kobo/$token/v1/library/$ids/state'
+import { Route as ApiKoboTokenV1LibraryIdsMetadataRouteImport } from './routes/api/kobo/$token/v1/library/$ids/metadata'
+import { Route as ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId/items'
+import { Route as ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRouteImport } from './routes/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image[.]jpg'
+import { Route as ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId/items/delete'
+import { Route as ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRouteImport } from './routes/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image[.]jpg'
 
 const ShelvesRoute = ShelvesRouteImport.update({
   id: '/shelves',
@@ -65,6 +81,11 @@ const ShelvesShelfIdRoute = ShelvesShelfIdRouteImport.update({
   path: '/$shelfId',
   getParentRoute: () => ShelvesRoute,
 } as any)
+const SettingsKoboRoute = SettingsKoboRouteImport.update({
+  id: '/settings/kobo',
+  path: '/settings/kobo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BooksBookIdRoute = BooksBookIdRouteImport.update({
   id: '/books/$bookId',
   path: '/books/$bookId',
@@ -95,12 +116,103 @@ const ApiBooksBookIdCoverRoute = ApiBooksBookIdCoverRouteImport.update({
   path: '/api/books/$bookId/cover',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiKoboTokenV1InitializationRoute =
+  ApiKoboTokenV1InitializationRouteImport.update({
+    id: '/api/kobo/$token/v1/initialization',
+    path: '/api/kobo/$token/v1/initialization',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1SplatRoute = ApiKoboTokenV1SplatRouteImport.update({
+  id: '/api/kobo/$token/v1/$',
+  path: '/api/kobo/$token/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBooksBookIdFilesFileIdRoute =
   ApiBooksBookIdFilesFileIdRouteImport.update({
     id: '/api/books/$bookId/files/$fileId',
     path: '/api/books/$bookId/files/$fileId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiKoboTokenV1LibraryTagsRoute =
+  ApiKoboTokenV1LibraryTagsRouteImport.update({
+    id: '/api/kobo/$token/v1/library/tags',
+    path: '/api/kobo/$token/v1/library/tags',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibrarySyncRoute =
+  ApiKoboTokenV1LibrarySyncRouteImport.update({
+    id: '/api/kobo/$token/v1/library/sync',
+    path: '/api/kobo/$token/v1/library/sync',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryBookUuidRoute =
+  ApiKoboTokenV1LibraryBookUuidRouteImport.update({
+    id: '/api/kobo/$token/v1/library/$bookUuid',
+    path: '/api/kobo/$token/v1/library/$bookUuid',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1AuthRefreshRoute =
+  ApiKoboTokenV1AuthRefreshRouteImport.update({
+    id: '/api/kobo/$token/v1/auth/refresh',
+    path: '/api/kobo/$token/v1/auth/refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1AuthDeviceRoute =
+  ApiKoboTokenV1AuthDeviceRouteImport.update({
+    id: '/api/kobo/$token/v1/auth/device',
+    path: '/api/kobo/$token/v1/auth/device',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenDownloadBookIdBookFormatRoute =
+  ApiKoboTokenDownloadBookIdBookFormatRouteImport.update({
+    id: '/api/kobo/$token/download/$bookId/$bookFormat',
+    path: '/api/kobo/$token/download/$bookId/$bookFormat',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryTagsTagIdRoute =
+  ApiKoboTokenV1LibraryTagsTagIdRouteImport.update({
+    id: '/$tagId',
+    path: '/$tagId',
+    getParentRoute: () => ApiKoboTokenV1LibraryTagsRoute,
+  } as any)
+const ApiKoboTokenV1LibraryIdsStateRoute =
+  ApiKoboTokenV1LibraryIdsStateRouteImport.update({
+    id: '/api/kobo/$token/v1/library/$ids/state',
+    path: '/api/kobo/$token/v1/library/$ids/state',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryIdsMetadataRoute =
+  ApiKoboTokenV1LibraryIdsMetadataRouteImport.update({
+    id: '/api/kobo/$token/v1/library/$ids/metadata',
+    path: '/api/kobo/$token/v1/library/$ids/metadata',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryTagsTagIdItemsRoute =
+  ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport.update({
+    id: '/items',
+    path: '/items',
+    getParentRoute: () => ApiKoboTokenV1LibraryTagsTagIdRoute,
+  } as any)
+const ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute =
+  ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRouteImport.update({
+    id: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg',
+    path: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute =
+  ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport.update({
+    id: '/delete',
+    path: '/delete',
+    getParentRoute: () => ApiKoboTokenV1LibraryTagsTagIdItemsRoute,
+  } as any)
+const ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute =
+  ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRouteImport.update(
+    {
+      id: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg',
+      path: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg',
+      getParentRoute: () => rootRouteImport,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -112,12 +224,28 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
+  '/settings/kobo': typeof SettingsKoboRoute
   '/shelves/$shelfId': typeof ShelvesShelfIdRoute
   '/shelves/': typeof ShelvesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
+  '/api/kobo/$token/v1/$': typeof ApiKoboTokenV1SplatRoute
+  '/api/kobo/$token/v1/initialization': typeof ApiKoboTokenV1InitializationRoute
+  '/api/kobo/$token/download/$bookId/$bookFormat': typeof ApiKoboTokenDownloadBookIdBookFormatRoute
+  '/api/kobo/$token/v1/auth/device': typeof ApiKoboTokenV1AuthDeviceRoute
+  '/api/kobo/$token/v1/auth/refresh': typeof ApiKoboTokenV1AuthRefreshRoute
+  '/api/kobo/$token/v1/library/$bookUuid': typeof ApiKoboTokenV1LibraryBookUuidRoute
+  '/api/kobo/$token/v1/library/sync': typeof ApiKoboTokenV1LibrarySyncRoute
+  '/api/kobo/$token/v1/library/tags': typeof ApiKoboTokenV1LibraryTagsRouteWithChildren
+  '/api/kobo/$token/v1/library/$ids/metadata': typeof ApiKoboTokenV1LibraryIdsMetadataRoute
+  '/api/kobo/$token/v1/library/$ids/state': typeof ApiKoboTokenV1LibraryIdsStateRoute
+  '/api/kobo/$token/v1/library/tags/$tagId': typeof ApiKoboTokenV1LibraryTagsTagIdRouteWithChildren
+  '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg': typeof ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute
+  '/api/kobo/$token/v1/library/tags/$tagId/items': typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteWithChildren
+  '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg': typeof ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute
+  '/api/kobo/$token/v1/library/tags/$tagId/items/delete': typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -128,12 +256,28 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
+  '/settings/kobo': typeof SettingsKoboRoute
   '/shelves/$shelfId': typeof ShelvesShelfIdRoute
   '/shelves': typeof ShelvesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
+  '/api/kobo/$token/v1/$': typeof ApiKoboTokenV1SplatRoute
+  '/api/kobo/$token/v1/initialization': typeof ApiKoboTokenV1InitializationRoute
+  '/api/kobo/$token/download/$bookId/$bookFormat': typeof ApiKoboTokenDownloadBookIdBookFormatRoute
+  '/api/kobo/$token/v1/auth/device': typeof ApiKoboTokenV1AuthDeviceRoute
+  '/api/kobo/$token/v1/auth/refresh': typeof ApiKoboTokenV1AuthRefreshRoute
+  '/api/kobo/$token/v1/library/$bookUuid': typeof ApiKoboTokenV1LibraryBookUuidRoute
+  '/api/kobo/$token/v1/library/sync': typeof ApiKoboTokenV1LibrarySyncRoute
+  '/api/kobo/$token/v1/library/tags': typeof ApiKoboTokenV1LibraryTagsRouteWithChildren
+  '/api/kobo/$token/v1/library/$ids/metadata': typeof ApiKoboTokenV1LibraryIdsMetadataRoute
+  '/api/kobo/$token/v1/library/$ids/state': typeof ApiKoboTokenV1LibraryIdsStateRoute
+  '/api/kobo/$token/v1/library/tags/$tagId': typeof ApiKoboTokenV1LibraryTagsTagIdRouteWithChildren
+  '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg': typeof ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute
+  '/api/kobo/$token/v1/library/tags/$tagId/items': typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteWithChildren
+  '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg': typeof ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute
+  '/api/kobo/$token/v1/library/tags/$tagId/items/delete': typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -146,12 +290,28 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/author/$name': typeof AuthorNameRoute
   '/books/$bookId': typeof BooksBookIdRoute
+  '/settings/kobo': typeof SettingsKoboRoute
   '/shelves/$shelfId': typeof ShelvesShelfIdRoute
   '/shelves/': typeof ShelvesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/books/$bookId_/edit': typeof BooksBookIdEditRoute
   '/api/books/$bookId/cover': typeof ApiBooksBookIdCoverRoute
   '/api/books/$bookId/files/$fileId': typeof ApiBooksBookIdFilesFileIdRoute
+  '/api/kobo/$token/v1/$': typeof ApiKoboTokenV1SplatRoute
+  '/api/kobo/$token/v1/initialization': typeof ApiKoboTokenV1InitializationRoute
+  '/api/kobo/$token/download/$bookId/$bookFormat': typeof ApiKoboTokenDownloadBookIdBookFormatRoute
+  '/api/kobo/$token/v1/auth/device': typeof ApiKoboTokenV1AuthDeviceRoute
+  '/api/kobo/$token/v1/auth/refresh': typeof ApiKoboTokenV1AuthRefreshRoute
+  '/api/kobo/$token/v1/library/$bookUuid': typeof ApiKoboTokenV1LibraryBookUuidRoute
+  '/api/kobo/$token/v1/library/sync': typeof ApiKoboTokenV1LibrarySyncRoute
+  '/api/kobo/$token/v1/library/tags': typeof ApiKoboTokenV1LibraryTagsRouteWithChildren
+  '/api/kobo/$token/v1/library/$ids/metadata': typeof ApiKoboTokenV1LibraryIdsMetadataRoute
+  '/api/kobo/$token/v1/library/$ids/state': typeof ApiKoboTokenV1LibraryIdsStateRoute
+  '/api/kobo/$token/v1/library/tags/$tagId': typeof ApiKoboTokenV1LibraryTagsTagIdRouteWithChildren
+  '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg': typeof ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute
+  '/api/kobo/$token/v1/library/tags/$tagId/items': typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteWithChildren
+  '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg': typeof ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute
+  '/api/kobo/$token/v1/library/tags/$tagId/items/delete': typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -165,12 +325,28 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
+    | '/settings/kobo'
     | '/shelves/$shelfId'
     | '/shelves/'
     | '/api/auth/$'
     | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
+    | '/api/kobo/$token/v1/$'
+    | '/api/kobo/$token/v1/initialization'
+    | '/api/kobo/$token/download/$bookId/$bookFormat'
+    | '/api/kobo/$token/v1/auth/device'
+    | '/api/kobo/$token/v1/auth/refresh'
+    | '/api/kobo/$token/v1/library/$bookUuid'
+    | '/api/kobo/$token/v1/library/sync'
+    | '/api/kobo/$token/v1/library/tags'
+    | '/api/kobo/$token/v1/library/$ids/metadata'
+    | '/api/kobo/$token/v1/library/$ids/state'
+    | '/api/kobo/$token/v1/library/tags/$tagId'
+    | '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
+    | '/api/kobo/$token/v1/library/tags/$tagId/items'
+    | '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
+    | '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -181,12 +357,28 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
+    | '/settings/kobo'
     | '/shelves/$shelfId'
     | '/shelves'
     | '/api/auth/$'
     | '/books/$bookId/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
+    | '/api/kobo/$token/v1/$'
+    | '/api/kobo/$token/v1/initialization'
+    | '/api/kobo/$token/download/$bookId/$bookFormat'
+    | '/api/kobo/$token/v1/auth/device'
+    | '/api/kobo/$token/v1/auth/refresh'
+    | '/api/kobo/$token/v1/library/$bookUuid'
+    | '/api/kobo/$token/v1/library/sync'
+    | '/api/kobo/$token/v1/library/tags'
+    | '/api/kobo/$token/v1/library/$ids/metadata'
+    | '/api/kobo/$token/v1/library/$ids/state'
+    | '/api/kobo/$token/v1/library/tags/$tagId'
+    | '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
+    | '/api/kobo/$token/v1/library/tags/$tagId/items'
+    | '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
+    | '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
   id:
     | '__root__'
     | '/'
@@ -198,12 +390,28 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/author/$name'
     | '/books/$bookId'
+    | '/settings/kobo'
     | '/shelves/$shelfId'
     | '/shelves/'
     | '/api/auth/$'
     | '/books/$bookId_/edit'
     | '/api/books/$bookId/cover'
     | '/api/books/$bookId/files/$fileId'
+    | '/api/kobo/$token/v1/$'
+    | '/api/kobo/$token/v1/initialization'
+    | '/api/kobo/$token/download/$bookId/$bookFormat'
+    | '/api/kobo/$token/v1/auth/device'
+    | '/api/kobo/$token/v1/auth/refresh'
+    | '/api/kobo/$token/v1/library/$bookUuid'
+    | '/api/kobo/$token/v1/library/sync'
+    | '/api/kobo/$token/v1/library/tags'
+    | '/api/kobo/$token/v1/library/$ids/metadata'
+    | '/api/kobo/$token/v1/library/$ids/state'
+    | '/api/kobo/$token/v1/library/tags/$tagId'
+    | '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
+    | '/api/kobo/$token/v1/library/tags/$tagId/items'
+    | '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
+    | '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -216,10 +424,23 @@ export interface RootRouteChildren {
   AdminUsersRoute: typeof AdminUsersRoute
   AuthorNameRoute: typeof AuthorNameRoute
   BooksBookIdRoute: typeof BooksBookIdRoute
+  SettingsKoboRoute: typeof SettingsKoboRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   BooksBookIdEditRoute: typeof BooksBookIdEditRoute
   ApiBooksBookIdCoverRoute: typeof ApiBooksBookIdCoverRoute
   ApiBooksBookIdFilesFileIdRoute: typeof ApiBooksBookIdFilesFileIdRoute
+  ApiKoboTokenV1SplatRoute: typeof ApiKoboTokenV1SplatRoute
+  ApiKoboTokenV1InitializationRoute: typeof ApiKoboTokenV1InitializationRoute
+  ApiKoboTokenDownloadBookIdBookFormatRoute: typeof ApiKoboTokenDownloadBookIdBookFormatRoute
+  ApiKoboTokenV1AuthDeviceRoute: typeof ApiKoboTokenV1AuthDeviceRoute
+  ApiKoboTokenV1AuthRefreshRoute: typeof ApiKoboTokenV1AuthRefreshRoute
+  ApiKoboTokenV1LibraryBookUuidRoute: typeof ApiKoboTokenV1LibraryBookUuidRoute
+  ApiKoboTokenV1LibrarySyncRoute: typeof ApiKoboTokenV1LibrarySyncRoute
+  ApiKoboTokenV1LibraryTagsRoute: typeof ApiKoboTokenV1LibraryTagsRouteWithChildren
+  ApiKoboTokenV1LibraryIdsMetadataRoute: typeof ApiKoboTokenV1LibraryIdsMetadataRoute
+  ApiKoboTokenV1LibraryIdsStateRoute: typeof ApiKoboTokenV1LibraryIdsStateRoute
+  ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute: typeof ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute
+  ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute: typeof ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -280,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShelvesShelfIdRouteImport
       parentRoute: typeof ShelvesRoute
     }
+    '/settings/kobo': {
+      id: '/settings/kobo'
+      path: '/settings/kobo'
+      fullPath: '/settings/kobo'
+      preLoaderRoute: typeof SettingsKoboRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/books/$bookId': {
       id: '/books/$bookId'
       path: '/books/$bookId'
@@ -322,11 +550,116 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBooksBookIdCoverRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/kobo/$token/v1/initialization': {
+      id: '/api/kobo/$token/v1/initialization'
+      path: '/api/kobo/$token/v1/initialization'
+      fullPath: '/api/kobo/$token/v1/initialization'
+      preLoaderRoute: typeof ApiKoboTokenV1InitializationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/$': {
+      id: '/api/kobo/$token/v1/$'
+      path: '/api/kobo/$token/v1/$'
+      fullPath: '/api/kobo/$token/v1/$'
+      preLoaderRoute: typeof ApiKoboTokenV1SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/books/$bookId/files/$fileId': {
       id: '/api/books/$bookId/files/$fileId'
       path: '/api/books/$bookId/files/$fileId'
       fullPath: '/api/books/$bookId/files/$fileId'
       preLoaderRoute: typeof ApiBooksBookIdFilesFileIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags': {
+      id: '/api/kobo/$token/v1/library/tags'
+      path: '/api/kobo/$token/v1/library/tags'
+      fullPath: '/api/kobo/$token/v1/library/tags'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/sync': {
+      id: '/api/kobo/$token/v1/library/sync'
+      path: '/api/kobo/$token/v1/library/sync'
+      fullPath: '/api/kobo/$token/v1/library/sync'
+      preLoaderRoute: typeof ApiKoboTokenV1LibrarySyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/$bookUuid': {
+      id: '/api/kobo/$token/v1/library/$bookUuid'
+      path: '/api/kobo/$token/v1/library/$bookUuid'
+      fullPath: '/api/kobo/$token/v1/library/$bookUuid'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryBookUuidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/auth/refresh': {
+      id: '/api/kobo/$token/v1/auth/refresh'
+      path: '/api/kobo/$token/v1/auth/refresh'
+      fullPath: '/api/kobo/$token/v1/auth/refresh'
+      preLoaderRoute: typeof ApiKoboTokenV1AuthRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/auth/device': {
+      id: '/api/kobo/$token/v1/auth/device'
+      path: '/api/kobo/$token/v1/auth/device'
+      fullPath: '/api/kobo/$token/v1/auth/device'
+      preLoaderRoute: typeof ApiKoboTokenV1AuthDeviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/download/$bookId/$bookFormat': {
+      id: '/api/kobo/$token/download/$bookId/$bookFormat'
+      path: '/api/kobo/$token/download/$bookId/$bookFormat'
+      fullPath: '/api/kobo/$token/download/$bookId/$bookFormat'
+      preLoaderRoute: typeof ApiKoboTokenDownloadBookIdBookFormatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags/$tagId': {
+      id: '/api/kobo/$token/v1/library/tags/$tagId'
+      path: '/$tagId'
+      fullPath: '/api/kobo/$token/v1/library/tags/$tagId'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRouteImport
+      parentRoute: typeof ApiKoboTokenV1LibraryTagsRoute
+    }
+    '/api/kobo/$token/v1/library/$ids/state': {
+      id: '/api/kobo/$token/v1/library/$ids/state'
+      path: '/api/kobo/$token/v1/library/$ids/state'
+      fullPath: '/api/kobo/$token/v1/library/$ids/state'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryIdsStateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/$ids/metadata': {
+      id: '/api/kobo/$token/v1/library/$ids/metadata'
+      path: '/api/kobo/$token/v1/library/$ids/metadata'
+      fullPath: '/api/kobo/$token/v1/library/$ids/metadata'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryIdsMetadataRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags/$tagId/items': {
+      id: '/api/kobo/$token/v1/library/tags/$tagId/items'
+      path: '/items'
+      fullPath: '/api/kobo/$token/v1/library/tags/$tagId/items'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport
+      parentRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRoute
+    }
+    '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg': {
+      id: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
+      path: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
+      fullPath: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
+      preLoaderRoute: typeof ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags/$tagId/items/delete': {
+      id: '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
+      path: '/delete'
+      fullPath: '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport
+      parentRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRoute
+    }
+    '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg': {
+      id: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
+      path: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
+      fullPath: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
+      preLoaderRoute: typeof ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -345,6 +678,51 @@ const ShelvesRouteChildren: ShelvesRouteChildren = {
 const ShelvesRouteWithChildren =
   ShelvesRoute._addFileChildren(ShelvesRouteChildren)
 
+interface ApiKoboTokenV1LibraryTagsTagIdItemsRouteChildren {
+  ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute
+}
+
+const ApiKoboTokenV1LibraryTagsTagIdItemsRouteChildren: ApiKoboTokenV1LibraryTagsTagIdItemsRouteChildren =
+  {
+    ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute:
+      ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute,
+  }
+
+const ApiKoboTokenV1LibraryTagsTagIdItemsRouteWithChildren =
+  ApiKoboTokenV1LibraryTagsTagIdItemsRoute._addFileChildren(
+    ApiKoboTokenV1LibraryTagsTagIdItemsRouteChildren,
+  )
+
+interface ApiKoboTokenV1LibraryTagsTagIdRouteChildren {
+  ApiKoboTokenV1LibraryTagsTagIdItemsRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteWithChildren
+}
+
+const ApiKoboTokenV1LibraryTagsTagIdRouteChildren: ApiKoboTokenV1LibraryTagsTagIdRouteChildren =
+  {
+    ApiKoboTokenV1LibraryTagsTagIdItemsRoute:
+      ApiKoboTokenV1LibraryTagsTagIdItemsRouteWithChildren,
+  }
+
+const ApiKoboTokenV1LibraryTagsTagIdRouteWithChildren =
+  ApiKoboTokenV1LibraryTagsTagIdRoute._addFileChildren(
+    ApiKoboTokenV1LibraryTagsTagIdRouteChildren,
+  )
+
+interface ApiKoboTokenV1LibraryTagsRouteChildren {
+  ApiKoboTokenV1LibraryTagsTagIdRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRouteWithChildren
+}
+
+const ApiKoboTokenV1LibraryTagsRouteChildren: ApiKoboTokenV1LibraryTagsRouteChildren =
+  {
+    ApiKoboTokenV1LibraryTagsTagIdRoute:
+      ApiKoboTokenV1LibraryTagsTagIdRouteWithChildren,
+  }
+
+const ApiKoboTokenV1LibraryTagsRouteWithChildren =
+  ApiKoboTokenV1LibraryTagsRoute._addFileChildren(
+    ApiKoboTokenV1LibraryTagsRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
@@ -355,10 +733,26 @@ const rootRouteChildren: RootRouteChildren = {
   AdminUsersRoute: AdminUsersRoute,
   AuthorNameRoute: AuthorNameRoute,
   BooksBookIdRoute: BooksBookIdRoute,
+  SettingsKoboRoute: SettingsKoboRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   BooksBookIdEditRoute: BooksBookIdEditRoute,
   ApiBooksBookIdCoverRoute: ApiBooksBookIdCoverRoute,
   ApiBooksBookIdFilesFileIdRoute: ApiBooksBookIdFilesFileIdRoute,
+  ApiKoboTokenV1SplatRoute: ApiKoboTokenV1SplatRoute,
+  ApiKoboTokenV1InitializationRoute: ApiKoboTokenV1InitializationRoute,
+  ApiKoboTokenDownloadBookIdBookFormatRoute:
+    ApiKoboTokenDownloadBookIdBookFormatRoute,
+  ApiKoboTokenV1AuthDeviceRoute: ApiKoboTokenV1AuthDeviceRoute,
+  ApiKoboTokenV1AuthRefreshRoute: ApiKoboTokenV1AuthRefreshRoute,
+  ApiKoboTokenV1LibraryBookUuidRoute: ApiKoboTokenV1LibraryBookUuidRoute,
+  ApiKoboTokenV1LibrarySyncRoute: ApiKoboTokenV1LibrarySyncRoute,
+  ApiKoboTokenV1LibraryTagsRoute: ApiKoboTokenV1LibraryTagsRouteWithChildren,
+  ApiKoboTokenV1LibraryIdsMetadataRoute: ApiKoboTokenV1LibraryIdsMetadataRoute,
+  ApiKoboTokenV1LibraryIdsStateRoute: ApiKoboTokenV1LibraryIdsStateRoute,
+  ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute:
+    ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute,
+  ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute:
+    ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

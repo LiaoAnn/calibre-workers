@@ -132,6 +132,9 @@ export default function Header() {
 										{user.email}
 									</DropdownMenuLabel>
 									<DropdownMenuSeparator />
+									<DropdownMenuItem asChild className="cursor-pointer">
+										<Link to="/settings/kobo">Kobo 裝置同步</Link>
+									</DropdownMenuItem>
 									{user.role === "admin" ? (
 										<DropdownMenuItem asChild className="cursor-pointer">
 											<Link to="/admin/users">使用者管理</Link>
