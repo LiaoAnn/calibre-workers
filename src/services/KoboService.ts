@@ -882,9 +882,23 @@ export const buildLocalLibrarySync = ({
 						.where(inArray(schema.shelfBooks.shelfId, shelfIds))
 				: [];
 
-		const bookIds = [...new Set(shelfBookRows.map((row) => row.bookId))];
+		const activeBookIds = [...new Set(shelfBookRows.map((row) => row.bookId))];
+		const syncedBookRows = yield* database
+			.select({ bookId: schema.koboSyncedBooks.bookId })
+			.from(schema.koboSyncedBooks)
+			.where(eq(schema.koboSyncedBooks.userId, userId));
+
+		const syncedBookIds = [...new Set(syncedBookRows.map((row) => row.bookId))];
+		const activeBookIdSet = new Set(activeBookIds);
+		const orphanedSyncedBookIds = syncedBookIds.filter(
+			(bookId) => !activeBookIdSet.has(bookId),
+		);
+		const orphanedSyncedBookIdSet = new Set(orphanedSyncedBookIds);
+		const syncScopeBookIds = [
+			...new Set([...activeBookIds, ...orphanedSyncedBookIds]),
+		];
 		const books =
-			bookIds.length > 0
+			syncScopeBookIds.length > 0
 				? yield* database
 						.select({
 							id: schema.books.id,
@@ -909,22 +923,22 @@ export const buildLocalLibrarySync = ({
 							schema.publishers,
 							eq(schema.publishers.id, schema.books.publisherId),
 						)
-						.where(inArray(schema.books.id, bookIds))
+						.where(inArray(schema.books.id, syncScopeBookIds))
 				: [];
 
 		const comments =
-			bookIds.length > 0
+			syncScopeBookIds.length > 0
 				? yield* database
 						.select({
 							bookId: schema.comments.bookId,
 							text: schema.comments.text,
 						})
 						.from(schema.comments)
-						.where(inArray(schema.comments.bookId, bookIds))
+						.where(inArray(schema.comments.bookId, syncScopeBookIds))
 				: [];
 
 		const files =
-			bookIds.length > 0
+			syncScopeBookIds.length > 0
 				? yield* database
 						.select({
 							id: schema.bookFiles.id,
@@ -935,27 +949,14 @@ export const buildLocalLibrarySync = ({
 						.from(schema.bookFiles)
 						.where(
 							and(
-								inArray(schema.bookFiles.bookId, bookIds),
+								inArray(schema.bookFiles.bookId, syncScopeBookIds),
 								inArray(schema.bookFiles.format, ["epub", "kepub"]),
 							),
 						)
 				: [];
 
-		const syncedBookRows =
-			bookIds.length > 0
-				? yield* database
-						.select({ bookId: schema.koboSyncedBooks.bookId })
-						.from(schema.koboSyncedBooks)
-						.where(
-							and(
-								eq(schema.koboSyncedBooks.userId, userId),
-								inArray(schema.koboSyncedBooks.bookId, bookIds),
-							),
-						)
-				: [];
-
 		const archivedBookRows =
-			bookIds.length > 0
+			syncScopeBookIds.length > 0
 				? yield* database
 						.select({
 							bookId: schema.archivedBooks.bookId,
@@ -966,13 +967,13 @@ export const buildLocalLibrarySync = ({
 						.where(
 							and(
 								eq(schema.archivedBooks.userId, userId),
-								inArray(schema.archivedBooks.bookId, bookIds),
+								inArray(schema.archivedBooks.bookId, syncScopeBookIds),
 							),
 						)
 				: [];
 
 		const readingStates =
-			bookIds.length > 0
+			syncScopeBookIds.length > 0
 				? yield* database
 						.select({
 							id: schema.koboReadingStates.id,
@@ -1012,7 +1013,7 @@ export const buildLocalLibrarySync = ({
 						.where(
 							and(
 								eq(schema.koboReadingStates.userId, userId),
-								inArray(schema.koboReadingStates.bookId, bookIds),
+								inArray(schema.koboReadingStates.bookId, syncScopeBookIds),
 							),
 						)
 				: [];
@@ -1059,6 +1060,8 @@ export const buildLocalLibrarySync = ({
 		const pendingConversions: KoboPendingConversion[] = [];
 		const pendingConversionSet = new Set<string>();
 		const newSyncedBookIds: string[] = [];
+		const archivedOrphanTimestamp = now();
+		const archivedOrphanBookIds: string[] = [];
 
 		const nextSyncToken: KoboSyncToken = {
 			...syncToken,
@@ -1075,7 +1078,9 @@ export const buildLocalLibrarySync = ({
 			.map((book) => {
 				const archived = archivedByBookId.get(book.id);
 				const isNew = !syncedBookSet.has(book.id);
+				const isOrphaned = orphanedSyncedBookIdSet.has(book.id);
 				const changed =
+					isOrphaned ||
 					book.lastModified > syncToken.booksLastModified ||
 					book.timestamp > syncToken.booksLastCreated ||
 					(archived?.lastModified ?? new Date(0)) >
@@ -1085,6 +1090,7 @@ export const buildLocalLibrarySync = ({
 					isNew,
 					changed,
 					archived,
+					isOrphaned,
 				};
 			})
 			.filter((entry) => entry.isNew || entry.changed);
@@ -1158,7 +1164,7 @@ export const buildLocalLibrarySync = ({
 					timestamp: entry.book.timestamp,
 					lastModified: entry.book.lastModified,
 				},
-				archived: entry.archived?.isArchived ?? false,
+				archived: entry.isOrphaned || (entry.archived?.isArchived ?? false),
 			});
 			const metadata = buildMetadata({
 				book: {
@@ -1199,6 +1205,10 @@ export const buildLocalLibrarySync = ({
 				});
 			}
 
+			if (entry.isOrphaned) {
+				archivedOrphanBookIds.push(entry.book.id);
+			}
+
 			nextSyncToken.booksLastModified =
 				entry.book.lastModified > nextSyncToken.booksLastModified
 					? entry.book.lastModified
@@ -1207,10 +1217,12 @@ export const buildLocalLibrarySync = ({
 				entry.book.timestamp > nextSyncToken.booksLastCreated
 					? entry.book.timestamp
 					: nextSyncToken.booksLastCreated;
+			const archiveLastModified = entry.isOrphaned
+				? archivedOrphanTimestamp
+				: (entry.archived?.lastModified ?? new Date(0));
 			nextSyncToken.archiveLastModified =
-				(entry.archived?.lastModified ?? new Date(0)) >
-				nextSyncToken.archiveLastModified
-					? (entry.archived?.lastModified ?? nextSyncToken.archiveLastModified)
+				archiveLastModified > nextSyncToken.archiveLastModified
+					? archiveLastModified
 					: nextSyncToken.archiveLastModified;
 		}
 
@@ -1385,6 +1397,65 @@ export const buildLocalLibrarySync = ({
 				readingState.lastModified > nextSyncToken.readingStateLastModified
 					? readingState.lastModified
 					: nextSyncToken.readingStateLastModified;
+		}
+
+		if (archivedOrphanBookIds.length > 0) {
+			const uniqueArchivedOrphanBookIds = [...new Set(archivedOrphanBookIds)];
+			const existingArchivedRows = yield* database
+				.select({ bookId: schema.archivedBooks.bookId })
+				.from(schema.archivedBooks)
+				.where(
+					and(
+						eq(schema.archivedBooks.userId, userId),
+						inArray(schema.archivedBooks.bookId, uniqueArchivedOrphanBookIds),
+					),
+				);
+
+			const existingArchivedBookIdSet = new Set(
+				existingArchivedRows.map((row) => row.bookId),
+			);
+
+			if (existingArchivedBookIdSet.size > 0) {
+				yield* database
+					.update(schema.archivedBooks)
+					.set({
+						isArchived: true,
+						lastModified: archivedOrphanTimestamp,
+					})
+					.where(
+						and(
+							eq(schema.archivedBooks.userId, userId),
+							inArray(schema.archivedBooks.bookId, [
+								...existingArchivedBookIdSet,
+							]),
+						),
+					);
+			}
+
+			const missingArchivedBookIds = uniqueArchivedOrphanBookIds.filter(
+				(bookId) => !existingArchivedBookIdSet.has(bookId),
+			);
+
+			if (missingArchivedBookIds.length > 0) {
+				yield* database.insert(schema.archivedBooks).values(
+					missingArchivedBookIds.map((bookId) => ({
+						id: crypto.randomUUID(),
+						userId,
+						bookId,
+						isArchived: true,
+						lastModified: archivedOrphanTimestamp,
+					})),
+				);
+			}
+
+			yield* database
+				.delete(schema.koboSyncedBooks)
+				.where(
+					and(
+						eq(schema.koboSyncedBooks.userId, userId),
+						inArray(schema.koboSyncedBooks.bookId, uniqueArchivedOrphanBookIds),
+					),
+				);
 		}
 
 		if (newSyncedBookIds.length > 0) {
