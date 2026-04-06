@@ -4,10 +4,7 @@ import { AppLayer } from "#/layers/AppLayer";
 import { koboJsonErrorResponse } from "#/lib/kobo.server";
 import { withKoboAuth } from "#/server/koboApi";
 import { getBookFile } from "#/services/FileService";
-import {
-	createMissingKepubConversionJobs,
-	getDownloadFileForKobo,
-} from "#/services/KoboService";
+import { getDownloadFileForKobo } from "#/services/KoboService";
 
 export const Route = createFileRoute(
 	"/api/kobo/$token/download/$bookId/$bookFormat",
@@ -37,17 +34,6 @@ export const Route = createFileRoute(
 					}
 
 					const selected = fileResult.right;
-					if (selected.fallbackToEpub && selected.conversionSourceFileId) {
-						// Queue conversion in background so next sync can serve kepub.
-						await Effect.runPromise(
-							createMissingKepubConversionJobs([
-								{
-									bookId: params.bookId,
-									sourceFileId: selected.conversionSourceFileId,
-								},
-							]).pipe(Effect.provide(AppLayer)),
-						);
-					}
 
 					const objectResult = await Effect.runPromise(
 						Effect.either(
