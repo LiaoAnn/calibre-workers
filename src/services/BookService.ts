@@ -58,7 +58,6 @@ export interface ListBooksResult {
 
 export interface CreateBookFromUploadInput {
 	title: string;
-	/** Multiple authors supported. TODO: add individual author profile pages in the future */
 	authors: string[];
 	description?: string;
 	publisher?: string;

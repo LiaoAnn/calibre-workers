@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
@@ -63,7 +63,9 @@ const getOwnedShelf = ({
 		const rows = yield* database
 			.select()
 			.from(schema.shelves)
-			.where(eq(schema.shelves.id, shelfId))
+			.where(
+				and(eq(schema.shelves.id, shelfId), isNull(schema.shelves.deletedAt)),
+			)
 			.limit(1);
 		const shelf = rows[0];
 
@@ -119,7 +121,12 @@ export const listShelves = (userId: string) =>
 				schema.shelves,
 				eq(schema.shelves.id, schema.shelfMembers.shelfId),
 			)
-			.where(eq(schema.shelfMembers.userId, userId))
+			.where(
+				and(
+					eq(schema.shelfMembers.userId, userId),
+					isNull(schema.shelves.deletedAt),
+				),
+			)
 			.orderBy(desc(schema.shelves.updatedAt), asc(schema.shelves.name));
 
 		if (shelves.length === 0) {
@@ -199,7 +206,12 @@ export const listShelfKoboSyncSettings = (userId: string) =>
 				schema.shelves,
 				eq(schema.shelves.id, schema.shelfMembers.shelfId),
 			)
-			.where(eq(schema.shelfMembers.userId, userId))
+			.where(
+				and(
+					eq(schema.shelfMembers.userId, userId),
+					isNull(schema.shelves.deletedAt),
+				),
+			)
 			.orderBy(asc(schema.shelves.name));
 	});
 
@@ -219,10 +231,15 @@ export const setShelfKoboSync = ({
 				enableKoboSync: schema.shelfMembers.enableKoboSync,
 			})
 			.from(schema.shelfMembers)
+			.innerJoin(
+				schema.shelves,
+				eq(schema.shelves.id, schema.shelfMembers.shelfId),
+			)
 			.where(
 				and(
 					eq(schema.shelfMembers.shelfId, shelfId),
 					eq(schema.shelfMembers.userId, userId),
+					isNull(schema.shelves.deletedAt),
 				),
 			)
 			.limit(1);
@@ -232,24 +249,25 @@ export const setShelfKoboSync = ({
 			return yield* Effect.fail(new ShelfAccessDenied({ shelfId, userId }));
 		}
 
+		const updateValues: Partial<typeof schema.shelfMembers.$inferInsert> = {
+			enableKoboSync: enabled,
+		};
+
+		if (enabled) {
+			updateValues.koboSyncDisabledAt = null;
+		} else if (membership.enableKoboSync) {
+			updateValues.koboSyncDisabledAt = new Date();
+		}
+
 		yield* database
 			.update(schema.shelfMembers)
-			.set({ enableKoboSync: enabled })
+			.set(updateValues)
 			.where(
 				and(
 					eq(schema.shelfMembers.shelfId, shelfId),
 					eq(schema.shelfMembers.userId, userId),
 				),
 			);
-
-		if (membership.enableKoboSync && !enabled) {
-			yield* database.insert(schema.shelfArchive).values({
-				id: crypto.randomUUID(),
-				shelfId,
-				userId,
-				lastModified: new Date(),
-			});
-		}
 
 		return { shelfId, enabled };
 	});
@@ -273,7 +291,16 @@ export const listBookShelfIds = ({
 					eq(schema.shelfMembers.userId, userId),
 				),
 			)
-			.where(eq(schema.shelfBooks.bookId, bookId));
+			.innerJoin(
+				schema.shelves,
+				eq(schema.shelves.id, schema.shelfBooks.shelfId),
+			)
+			.where(
+				and(
+					eq(schema.shelfBooks.bookId, bookId),
+					isNull(schema.shelves.deletedAt),
+				),
+			);
 
 		return rows.map((row) => row.shelfId);
 	});
@@ -306,6 +333,7 @@ export const createShelf = ({
 			userId,
 			role: "owner",
 			addedByUserId: userId,
+			koboSyncDisabledAt: null,
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -388,7 +416,8 @@ export const deleteShelf = ({
 		yield* getOwnedShelf({ shelfId, userId });
 
 		yield* database
-			.delete(schema.shelves)
+			.update(schema.shelves)
+			.set({ deletedAt: new Date() })
 			.where(eq(schema.shelves.id, shelfId));
 
 		return { success: true };

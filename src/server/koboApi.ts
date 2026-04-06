@@ -109,6 +109,7 @@ interface KoboHandlerOutput {
 }
 // TODO: should can use POST: withKoboAuth(async ({request, params}) => {...}) directly
 // not POST: async (input) => withKoboAuth(input, async ({request, params}) => {...})
+// TODO: even we can handle Effect errors in withKoboAuth, catch and handle all errors
 export const withKoboAuth = async <
 	TInput extends KoboRouteHandlerInput<KoboRouteParams & KoboTokenRouteParams>,
 >(

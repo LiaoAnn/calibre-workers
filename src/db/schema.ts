@@ -108,7 +108,6 @@ export const userRelations = relations(user, ({ many }) => ({
 	archivedBooks: many(archivedBooks),
 	koboSyncedBooks: many(koboSyncedBooks),
 	koboReadingStates: many(koboReadingStates),
-	shelfArchiveEntries: many(shelfArchive),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -210,8 +209,6 @@ export type KoboLoggedBody =
 			value: string;
 			truncated?: boolean;
 	  };
-
-// TODO: use deleted_at and remove shelfArchive after implementing proper sync and tombstone handling.
 export const shelves = sqliteTable(
 	"shelves",
 	{
@@ -228,8 +225,12 @@ export const shelves = sqliteTable(
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.$onUpdate(() => /* @__PURE__ */ new Date())
 			.notNull(),
+		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 	},
-	(table) => [index("shelves_visibility_idx").on(table.visibility)],
+	(table) => [
+		index("shelves_visibility_idx").on(table.visibility),
+		index("shelves_deleted_at_idx").on(table.deletedAt),
+	],
 );
 
 export const shelfBooks = sqliteTable(
@@ -271,6 +272,9 @@ export const shelfMembers = sqliteTable(
 		enableKoboSync: integer("enable_kobo_sync", { mode: "boolean" })
 			.default(false)
 			.notNull(),
+		koboSyncDisabledAt: integer("kobo_sync_disabled_at", {
+			mode: "timestamp_ms",
+		}),
 		createdAt: integer("created_at", { mode: "timestamp_ms" })
 			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
 			.notNull(),
@@ -288,28 +292,10 @@ export const shelfMembers = sqliteTable(
 			table.userId,
 			table.enableKoboSync,
 		),
-	],
-);
-
-// Deletion tombstone used for sync: after a shelf disappears, device still
-// needs a "DeletedTag" event, so we keep a per-user record temporarily.
-export const shelfArchive = sqliteTable(
-	"shelf_archive",
-	{
-		id: text("id").primaryKey(),
-		shelfId: text("shelf_id").notNull(),
-		userId: text("user_id")
-			.notNull()
-			.references(() => user.id, { onDelete: "cascade" }),
-		lastModified: integer("last_modified", { mode: "timestamp_ms" })
-			.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-			.$onUpdate(() => /* @__PURE__ */ new Date())
-			.notNull(),
-	},
-	(table) => [
-		index("shelf_archive_user_idx").on(table.userId),
-		index("shelf_archive_shelf_idx").on(table.shelfId),
-		index("shelf_archive_last_modified_idx").on(table.lastModified),
+		index("shelf_members_kobo_sync_disabled_idx").on(
+			table.userId,
+			table.koboSyncDisabledAt,
+		),
 	],
 );
 
@@ -641,13 +627,6 @@ export const shelfMembersRelations = relations(shelfMembers, ({ one }) => ({
 		fields: [shelfMembers.addedByUserId],
 		references: [user.id],
 		relationName: "shelfMemberAddedByUser",
-	}),
-}));
-
-export const shelfArchiveRelations = relations(shelfArchive, ({ one }) => ({
-	user: one(user, {
-		fields: [shelfArchive.userId],
-		references: [user.id],
 	}),
 }));
 

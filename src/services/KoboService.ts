@@ -865,6 +865,7 @@ export const buildLocalLibrarySync = ({
 				and(
 					eq(schema.shelfMembers.userId, userId),
 					eq(schema.shelfMembers.enableKoboSync, true),
+					isNull(schema.shelves.deletedAt),
 				),
 			);
 
@@ -1248,35 +1249,80 @@ export const buildLocalLibrarySync = ({
 					: nextSyncToken.tagsLastModified;
 		}
 
-		// Tombstone rows let us emit DeletedTag once even after the shelf was removed
-		// from the main shelves table.
-		const archivedTagRows = yield* database
+		const deletedShelfRows = yield* database
 			.select({
-				id: schema.shelfArchive.id,
-				shelfId: schema.shelfArchive.shelfId,
-				lastModified: schema.shelfArchive.lastModified,
+				shelfId: schema.shelves.id,
+				lastModified: schema.shelves.deletedAt,
 			})
-			.from(schema.shelfArchive)
+			.from(schema.shelfMembers)
+			.innerJoin(
+				schema.shelves,
+				eq(schema.shelves.id, schema.shelfMembers.shelfId),
+			)
 			.where(
 				and(
-					eq(schema.shelfArchive.userId, userId),
-					gt(schema.shelfArchive.lastModified, syncToken.tagsLastModified),
+					eq(schema.shelfMembers.userId, userId),
+					gt(schema.shelves.deletedAt, syncToken.tagsLastModified),
 				),
 			);
 
-		for (const archivedTag of archivedTagRows) {
+		const disabledSyncRows = yield* database
+			.select({
+				shelfId: schema.shelfMembers.shelfId,
+				lastModified: schema.shelfMembers.koboSyncDisabledAt,
+			})
+			.from(schema.shelfMembers)
+			.where(
+				and(
+					eq(schema.shelfMembers.userId, userId),
+					eq(schema.shelfMembers.enableKoboSync, false),
+					gt(
+						schema.shelfMembers.koboSyncDisabledAt,
+						syncToken.tagsLastModified,
+					),
+				),
+			);
+
+		const deletedTagByShelfId = new Map<string, Date>();
+		for (const row of deletedShelfRows) {
+			if (!row.lastModified) {
+				continue;
+			}
+
+			const previous = deletedTagByShelfId.get(row.shelfId);
+			if (!previous || row.lastModified > previous) {
+				deletedTagByShelfId.set(row.shelfId, row.lastModified);
+			}
+		}
+
+		for (const row of disabledSyncRows) {
+			if (!row.lastModified) {
+				continue;
+			}
+
+			const previous = deletedTagByShelfId.get(row.shelfId);
+			if (!previous || row.lastModified > previous) {
+				deletedTagByShelfId.set(row.shelfId, row.lastModified);
+			}
+		}
+
+		const deletedTags = [...deletedTagByShelfId.entries()]
+			.map(([shelfId, lastModified]) => ({ shelfId, lastModified }))
+			.sort((a, b) => a.lastModified.getTime() - b.lastModified.getTime());
+
+		for (const deletedTag of deletedTags) {
 			syncResults.push({
 				DeletedTag: {
 					Tag: {
-						Id: archivedTag.shelfId,
-						LastModified: toKoboTimestamp(archivedTag.lastModified),
+						Id: deletedTag.shelfId,
+						LastModified: toKoboTimestamp(deletedTag.lastModified),
 					},
 				},
 			});
 
 			nextSyncToken.tagsLastModified =
-				archivedTag.lastModified > nextSyncToken.tagsLastModified
-					? archivedTag.lastModified
+				deletedTag.lastModified > nextSyncToken.tagsLastModified
+					? deletedTag.lastModified
 					: nextSyncToken.tagsLastModified;
 		}
 
@@ -1348,15 +1394,6 @@ export const buildLocalLibrarySync = ({
 					userId,
 					bookId,
 				})),
-			);
-		}
-
-		if (archivedTagRows.length > 0) {
-			yield* database.delete(schema.shelfArchive).where(
-				inArray(
-					schema.shelfArchive.id,
-					archivedTagRows.map((row) => row.id),
-				),
 			);
 		}
 
@@ -2036,6 +2073,7 @@ const ensureEditableTagShelfForUser = ({
 				and(
 					eq(schema.shelfMembers.userId, userId),
 					eq(schema.shelfMembers.shelfId, tagId),
+					isNull(schema.shelves.deletedAt),
 				),
 			)
 			.limit(1);
@@ -2052,7 +2090,7 @@ const ensureEditableTagShelfForUser = ({
 		if (!shelf.enableKoboSync) {
 			yield* database
 				.update(schema.shelfMembers)
-				.set({ enableKoboSync: true })
+				.set({ enableKoboSync: true, koboSyncDisabledAt: null })
 				.where(
 					and(
 						eq(schema.shelfMembers.shelfId, tagId),
@@ -2187,6 +2225,7 @@ export const createOrUpdateKoboTag = ({
 				and(
 					eq(schema.shelfMembers.userId, userId),
 					eq(schema.shelves.name, normalizedName),
+					isNull(schema.shelves.deletedAt),
 				),
 			)
 			.limit(1);
@@ -2213,6 +2252,7 @@ export const createOrUpdateKoboTag = ({
 				role: "owner",
 				addedByUserId: userId,
 				enableKoboSync: true,
+				koboSyncDisabledAt: null,
 			});
 		} else {
 			if (!isEditableShelfRole(existing.role)) {
@@ -2226,7 +2266,7 @@ export const createOrUpdateKoboTag = ({
 			if (!existing.enableKoboSync) {
 				yield* database
 					.update(schema.shelfMembers)
-					.set({ enableKoboSync: true })
+					.set({ enableKoboSync: true, koboSyncDisabledAt: null })
 					.where(
 						and(
 							eq(schema.shelfMembers.shelfId, tagId),
@@ -2289,14 +2329,10 @@ export const deleteKoboTag = ({
 		const database = yield* DatabaseContext;
 		yield* ensureEditableTagShelfForUser({ userId, tagId });
 
-		yield* database.insert(schema.shelfArchive).values({
-			id: crypto.randomUUID(),
-			shelfId: tagId,
-			userId,
-			lastModified: now(),
-		});
-
-		yield* database.delete(schema.shelves).where(eq(schema.shelves.id, tagId));
+		yield* database
+			.update(schema.shelves)
+			.set({ deletedAt: now() })
+			.where(eq(schema.shelves.id, tagId));
 
 		return { success: true as const, tagId };
 	});
