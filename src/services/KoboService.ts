@@ -14,6 +14,7 @@ import {
 	type KoboTagPayload,
 	parseReadingStatePayload,
 } from "#/lib/kobo.server";
+import { createConversionJob } from "#/services/ConversionService";
 
 const KOBO_STORE_API_URL = "https://storeapi.kobo.com";
 const SYNC_TOKEN_HEADER = "x-kobo-synctoken";
@@ -1372,38 +1373,61 @@ export const createMissingKepubConversionJobs = (
 ) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
-		const jobIds: string[] = [];
-
-		for (const request of requests) {
-			const existing = yield* database
-				.select({ id: schema.conversionJobs.id })
-				.from(schema.conversionJobs)
-				.where(
-					and(
-						eq(schema.conversionJobs.bookId, request.bookId),
-						eq(schema.conversionJobs.sourceFileId, request.sourceFileId),
-						eq(schema.conversionJobs.targetFormat, "kepub"),
-						inArray(schema.conversionJobs.status, ["pending", "processing"]),
-					),
-				)
-				.limit(1);
-
-			if (existing[0]) {
-				continue;
-			}
-
-			const id = crypto.randomUUID();
-			yield* database.insert(schema.conversionJobs).values({
-				id,
-				bookId: request.bookId,
-				sourceFileId: request.sourceFileId,
-				targetFormat: "kepub",
-				status: "pending",
-			});
-			jobIds.push(id);
+		if (requests.length === 0) {
+			return [];
 		}
 
-		return jobIds;
+		const requestByKey = new Map<string, KoboPendingConversion>();
+		for (const request of requests) {
+			const key = `${request.bookId}:${request.sourceFileId}`;
+			if (!requestByKey.has(key)) {
+				requestByKey.set(key, request);
+			}
+		}
+
+		const uniqueRequests = [...requestByKey.values()];
+		const bookIds = [
+			...new Set(uniqueRequests.map((request) => request.bookId)),
+		];
+		const sourceFileIds = [
+			...new Set(uniqueRequests.map((request) => request.sourceFileId)),
+		];
+
+		const existingJobs = yield* database
+			.select({
+				bookId: schema.conversionJobs.bookId,
+				sourceFileId: schema.conversionJobs.sourceFileId,
+			})
+			.from(schema.conversionJobs)
+			.where(
+				and(
+					inArray(schema.conversionJobs.bookId, bookIds),
+					inArray(schema.conversionJobs.sourceFileId, sourceFileIds),
+					eq(schema.conversionJobs.targetFormat, "kepub"),
+					inArray(schema.conversionJobs.status, ["pending", "processing"]),
+				),
+			);
+
+		const existingKeySet = new Set(
+			existingJobs.map((job) => `${job.bookId}:${job.sourceFileId}`),
+		);
+		const missingRequests = uniqueRequests.filter(
+			(request) =>
+				!existingKeySet.has(`${request.bookId}:${request.sourceFileId}`),
+		);
+
+		const createdJobs = yield* Effect.forEach(
+			missingRequests,
+			(request) =>
+				createConversionJob({
+					bookId: request.bookId,
+					sourceFileId: request.sourceFileId,
+					targetFormat: "kepub",
+				}),
+			{ concurrency: "unbounded" },
+		);
+
+		return createdJobs.map((job) => job.jobId);
 	});
 
 export const getBookByUuid = (bookUuid: string) =>
@@ -1556,11 +1580,6 @@ export const getDownloadFileForKobo = ({
 }) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
-		const rows = yield* database
-			.select()
-			.from(schema.bookFiles)
-			.where(eq(schema.bookFiles.bookId, bookId));
-
 		const books = yield* database
 			.select()
 			.from(schema.books)
@@ -1571,6 +1590,11 @@ export const getDownloadFileForKobo = ({
 		if (!book) {
 			return yield* Effect.fail(new KoboBookNotFound({ bookUuid: bookId }));
 		}
+
+		const rows = yield* database
+			.select()
+			.from(schema.bookFiles)
+			.where(eq(schema.bookFiles.bookId, bookId));
 
 		const normalizedFormat = requestedFormat.toLowerCase();
 		const exact = rows.find((row) => row.format === normalizedFormat);
