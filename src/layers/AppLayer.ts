@@ -1,3 +1,5 @@
+import "@tanstack/react-start/server-only";
+
 import { Layer } from "effect";
 import { ConverterContainerLive } from "#/layers/ConverterContainerLayer";
 import { DatabaseLive } from "#/layers/DatabaseLayer";
