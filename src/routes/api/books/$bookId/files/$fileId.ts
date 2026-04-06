@@ -13,11 +13,7 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 	},
 	server: {
 		handlers: {
-			GET: async ({
-				params,
-			}: {
-				params: { bookId: string; fileId: string };
-			}) => {
+			GET: async ({ params }) => {
 				const runnable = Effect.gen(function* () {
 					const fileRecord = yield* getBookFileRecord(
 						params.bookId,
