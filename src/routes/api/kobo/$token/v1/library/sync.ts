@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
 import { AppLayer } from "#/layers/AppLayer";
@@ -35,11 +36,24 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/sync")({
 					);
 
 					if (localSync.pendingConversions.length > 0) {
-						await Effect.runPromise(
+						const jobIds = await Effect.runPromise(
 							createMissingKepubConversionJobs(
 								localSync.pendingConversions,
 							).pipe(Effect.provide(AppLayer)),
 						);
+
+						if (jobIds.length > 0) {
+							try {
+								await Promise.all(
+									jobIds.map((jobId) => env.CONVERSION_QUEUE.send({ jobId })),
+								);
+							} catch (error) {
+								console.error("Failed to enqueue Kobo sync conversion jobs", {
+									jobIds,
+									error,
+								});
+							}
+						}
 					}
 
 					const encodedLocalSyncResults = encodeKoboLocalSyncResults(
