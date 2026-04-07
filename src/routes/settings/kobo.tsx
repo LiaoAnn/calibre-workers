@@ -201,7 +201,8 @@ function KoboSettingsPage() {
 				<CardHeader>
 					<CardTitle>書架同步設定</CardTitle>
 					<CardDescription>
-						設定哪些書架要同步到 Kobo 裝置。僅擁有者或編輯者可調整。
+						設定你在各書架的 Kobo
+						同步偏好，僅套用至你的書架，不會影響其他成員設定。
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -212,8 +213,6 @@ function KoboSettingsPage() {
 					) : (
 						<div className="space-y-3">
 							{settings.shelves.map((shelf) => {
-								const canEdit =
-									shelf.memberRole === "owner" || shelf.memberRole === "editor";
 								const isUpdating =
 									setShelfKoboSyncMutation.isPending &&
 									setShelfKoboSyncMutation.variables?.shelfId === shelf.shelfId;
@@ -243,7 +242,7 @@ function KoboSettingsPage() {
 											type="button"
 											variant={shelf.enableKoboSync ? "secondary" : "outline"}
 											className="w-full sm:w-auto"
-											disabled={isUpdating || !canEdit}
+											disabled={isUpdating}
 											onClick={() => {
 												setShelfKoboSyncMutation.mutate({
 													shelfId: shelf.shelfId,
@@ -251,13 +250,11 @@ function KoboSettingsPage() {
 												});
 											}}
 										>
-											{!canEdit
-												? "無權限"
-												: isUpdating
-													? "更新中..."
-													: shelf.enableKoboSync
-														? "停用同步"
-														: "啟用同步"}
+											{isUpdating
+												? "更新你的設定中..."
+												: shelf.enableKoboSync
+													? "停用我的同步"
+													: "啟用我的同步"}
 										</Button>
 									</div>
 								);
