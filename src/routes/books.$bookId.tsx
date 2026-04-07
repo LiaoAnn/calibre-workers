@@ -240,7 +240,7 @@ function BookDetailPage() {
 								<DropdownMenuTrigger asChild>
 									<Button variant="outline" size="sm" className="w-full gap-2">
 										<Menu size={14} />
-										書籍操作
+										更多動作
 									</Button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent
