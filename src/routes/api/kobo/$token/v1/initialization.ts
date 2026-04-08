@@ -1,16 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
 import {
 	encodeKoboInitializationResponse,
+	koboInitializationResourceSnapshot,
 	koboJsonErrorResponse,
 	koboJsonResponse,
 } from "#/lib/kobo.server";
 import { withKoboAuth } from "#/server/koboApi";
-import {
-	buildInitializationResources,
-	proxyKoboRequest,
-} from "#/services/KoboService";
+import { buildInitializationResources } from "#/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/initialization")({
 	server: {
@@ -18,29 +14,11 @@ export const Route = createFileRoute("/api/kobo/$token/v1/initialization")({
 			GET: async (input) =>
 				withKoboAuth(input, async ({ request, koboToken }) => {
 					const origin = new URL(request.url).origin;
-					let upstreamResources: Record<string, unknown> | undefined;
-
-					try {
-						// We best-effort probe upstream initialization so official resource
-						// URLs can stay in sync, then override endpoints we handle locally.
-						const { response } = await Effect.runPromise(
-							proxyKoboRequest({
-								request: request.clone(),
-								token: koboToken,
-							}).pipe(Effect.provide(AppLayer)),
-						);
-						const json = (await response.clone().json()) as {
-							Resources?: Record<string, unknown>;
-						};
-						upstreamResources = json.Resources;
-					} catch {
-						upstreamResources = undefined;
-					}
 
 					const resources = buildInitializationResources({
 						origin,
 						token: koboToken,
-						upstreamResources,
+						upstreamResources: koboInitializationResourceSnapshot,
 					});
 
 					const encodedInitializationPayload = encodeKoboInitializationResponse(
