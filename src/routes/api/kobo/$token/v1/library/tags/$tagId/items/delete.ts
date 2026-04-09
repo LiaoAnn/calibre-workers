@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect, Either } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
+import { Effect } from "effect";
 import {
 	encodeKoboEmptyTextResponse,
 	KOBO_TEXT_HEADERS,
-	koboJsonErrorResponse,
-	mapTagError,
+	KoboEncodingFailure,
+	KoboMalformedRequest,
 	parseTagItemsBody,
 } from "#/lib/kobo.server";
 import { withKoboAuth } from "#/server/koboApi";
@@ -17,75 +16,45 @@ export const Route = createFileRoute(
 	server: {
 		handlers: {
 			POST: async (input) =>
-				withKoboAuth(input, async ({ request, params, koboAuth }) => {
-					let body: unknown;
-					try {
-						body = (await request.clone().json()) as unknown;
-					} catch {
+				withKoboAuth(input, ({ request, params, koboAuth }) =>
+					Effect.gen(function* () {
+						const body = yield* Effect.tryPromise({
+							try: () => request.clone().json() as Promise<unknown>,
+							catch: () =>
+								new KoboMalformedRequest({ reason: "Malformed tags request" }),
+						});
+
+						const revisionIds = parseTagItemsBody(body);
+						if (!revisionIds) {
+							return yield* Effect.fail(
+								new KoboMalformedRequest({ reason: "Malformed tags request" }),
+							);
+						}
+
+						yield* removeItemsFromKoboTag({
+							userId: koboAuth.userId,
+							tagId: params.tagId,
+							revisionIds,
+						});
+
+						const encodedResponse = encodeKoboEmptyTextResponse("");
+						if (!encodedResponse) {
+							return yield* Effect.fail(
+								new KoboEncodingFailure({
+									operation: "library.tag.items.delete.encodeEmptyText",
+								}),
+							);
+						}
+
 						return {
-							response: koboJsonErrorResponse({
-								status: 400,
-								message: "Malformed tags request",
-								code: "MalformedRequest",
+							response: new Response(encodedResponse, {
+								status: 200,
+								headers: KOBO_TEXT_HEADERS,
 							}),
 							isHandledInternally: true,
 						};
-					}
-
-					const revisionIds = parseTagItemsBody(body);
-					if (!revisionIds) {
-						return {
-							response: koboJsonErrorResponse({
-								status: 400,
-								message: "Malformed tags request",
-								code: "MalformedRequest",
-							}),
-							isHandledInternally: true,
-						};
-					}
-
-					const result = await Effect.runPromise(
-						Effect.either(
-							removeItemsFromKoboTag({
-								userId: koboAuth.userId,
-								tagId: params.tagId,
-								revisionIds,
-							}).pipe(Effect.provide(AppLayer)),
-						),
-					);
-
-					if (Either.isLeft(result)) {
-						const { status, message, code } = mapTagError(result.left);
-						return {
-							response: koboJsonErrorResponse({
-								status,
-								message,
-								code,
-							}),
-							isHandledInternally: true,
-						};
-					}
-
-					const encodedResponse = encodeKoboEmptyTextResponse("");
-					if (!encodedResponse) {
-						return {
-							response: koboJsonErrorResponse({
-								status: 500,
-								message: "Internal Server Error",
-								code: "InternalServerError",
-							}),
-							isHandledInternally: true,
-						};
-					}
-
-					return {
-						response: new Response(encodedResponse, {
-							status: 200,
-							headers: KOBO_TEXT_HEADERS,
-						}),
-						isHandledInternally: true,
-					};
-				}),
+					}),
+				),
 		},
 	},
 });

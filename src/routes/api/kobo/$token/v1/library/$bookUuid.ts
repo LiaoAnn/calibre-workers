@@ -1,60 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect, Either } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
-import { koboJsonErrorResponse } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
-import {
-	proxyKoboRequest,
-	setArchivedBookByUuid,
-} from "#/services/KoboService";
+import { Effect } from "effect";
+import { KoboBookNotFound } from "#/lib/kobo.server";
+import { resolveKoboLocalOrProxy, withKoboAuth } from "#/server/koboApi";
+import { setArchivedBookByUuid } from "#/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/$bookUuid")({
 	server: {
 		handlers: {
 			DELETE: async (input) =>
-				withKoboAuth(
-					input,
-					async ({ request, params, koboToken, koboAuth }) => {
-						const result = await Effect.runPromise(
-							Effect.either(
-								setArchivedBookByUuid({
-									userId: koboAuth.userId,
-									bookUuid: params.bookUuid,
-									isArchived: true,
-								}).pipe(Effect.provide(AppLayer)),
-							),
-						);
+				withKoboAuth(input, ({ request, params, koboToken, koboAuth }) =>
+					Effect.gen(function* () {
+						const archivedResult = yield* resolveKoboLocalOrProxy({
+							local: setArchivedBookByUuid({
+								userId: koboAuth.userId,
+								bookUuid: params.bookUuid,
+								isArchived: true,
+							}),
+							request,
+							token: koboToken,
+							onLocalFailure: () =>
+								new KoboBookNotFound({ bookUuid: params.bookUuid }),
+						});
 
-						if (Either.isLeft(result)) {
-							try {
-								const { response } = await Effect.runPromise(
-									proxyKoboRequest({
-										request: request.clone(),
-										token: koboToken,
-									}).pipe(Effect.provide(AppLayer)),
-								);
-
-								return {
-									response,
-									isHandledInternally: false,
-								};
-							} catch {
-								return {
-									response: koboJsonErrorResponse({
-										status: 404,
-										message: "Book not found",
-										code: "BookNotFound",
-									}),
-									isHandledInternally: true,
-								};
-							}
+						if (archivedResult.source === "proxy") {
+							return archivedResult.output;
 						}
 
 						return {
 							response: new Response(null, { status: 204 }),
 							isHandledInternally: true,
 						};
-					},
+					}),
 				),
 		},
 	},

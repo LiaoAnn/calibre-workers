@@ -2,13 +2,23 @@ import "@tanstack/react-start/server-only";
 
 import { Effect, Either } from "effect";
 import { AppLayer } from "#/layers/AppLayer";
-import { koboJsonErrorResponse } from "#/lib/kobo.server";
+import type { DatabaseContext } from "#/layers/DatabaseLayer";
+import type { R2Context } from "#/layers/R2Layer";
+import {
+	type KoboHandledError,
+	KoboMalformedRouteParams,
+	KoboUnauthorized,
+	koboErrorResponseFromError,
+	koboInternalServerErrorResponse,
+} from "#/lib/kobo.server";
 import type { KoboAuthTokenContext } from "#/services/KoboService";
 import {
 	persistKoboApiLog,
 	resolveKoboAuthToken,
 	serializeBody,
 } from "#/services/KoboService";
+
+const KOBO_STORE_API_URL = "https://storeapi.kobo.com";
 
 type KoboRequestPayload = Pick<
 	Request,
@@ -50,6 +60,18 @@ const normalizeParams = <TParams extends KoboRouteParams>(params: TParams) => {
 	}
 
 	return normalized as KoboNormalizedParams<TParams>;
+};
+
+const buildStoreUrl = (requestUrl: URL, token: string) => {
+	const prefix = `/api/kobo/${token}`;
+	const relativePath = requestUrl.pathname.startsWith(prefix)
+		? requestUrl.pathname.slice(prefix.length) || "/"
+		: requestUrl.pathname;
+	const normalizedPath = relativePath.startsWith("/")
+		? relativePath
+		: `/${relativePath}`;
+
+	return `${KOBO_STORE_API_URL}${normalizedPath}${requestUrl.search}`;
 };
 
 const resolveAuthFromToken = async (token: string) => {
@@ -107,24 +129,120 @@ interface KoboHandlerOutput {
 	response: Response;
 	isHandledInternally: boolean;
 }
-// TODO: should can use POST: withKoboAuth(async ({request, params}) => {...}) directly
-// not POST: async (input) => withKoboAuth(input, async ({request, params}) => {...})
-// TODO: even we can handle Effect errors in withKoboAuth, catch and handle all errors
+
+type KoboLocalOrProxyResult<A> =
+	| {
+			readonly source: "local";
+			readonly value: A;
+	  }
+	| {
+			readonly source: "proxy";
+			readonly output: KoboHandlerOutput;
+	  };
+
+const toKoboProxyHandlerOutput = (response: Response): KoboHandlerOutput => ({
+	response,
+	isHandledInternally: false,
+});
+
+export const proxyKoboHandlerOutput = ({
+	request,
+	token,
+	rawStoreToken,
+}: {
+	request: KoboRequestPayload;
+	token: string;
+	rawStoreToken?: string;
+}) =>
+	Effect.tryPromise({
+		try: async () => {
+			const proxySource = request.clone();
+			const proxyUrl = buildStoreUrl(new URL(proxySource.url), token);
+			const outgoingHeaders = new Headers(proxySource.headers);
+			outgoingHeaders.delete("host");
+			if (rawStoreToken) {
+				outgoingHeaders.set("x-kobo-synctoken", rawStoreToken);
+			}
+
+			const proxyRequest = new Request(proxyUrl, {
+				method: proxySource.method,
+				headers: outgoingHeaders,
+				body:
+					proxySource.method === "GET" || proxySource.method === "HEAD"
+						? null
+						: proxySource.body,
+				redirect: "manual",
+			});
+
+			const response = await fetch(proxyRequest);
+			return toKoboProxyHandlerOutput(response);
+		},
+		catch: (cause) =>
+			new Error(
+				`Kobo proxy failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+			),
+	});
+
+export const resolveKoboLocalOrProxy = <A, E extends KoboHandledError>({
+	local,
+	request,
+	token,
+	rawStoreToken,
+	onLocalFailure,
+}: {
+	local: Effect.Effect<A, E, DatabaseContext | R2Context>;
+	request: KoboRequestPayload;
+	token: string;
+	rawStoreToken?: string;
+	onLocalFailure: (error: E) => KoboHandledError;
+}): Effect.Effect<
+	KoboLocalOrProxyResult<A>,
+	KoboHandledError,
+	DatabaseContext | R2Context
+> =>
+	Effect.gen(function* () {
+		const localResult = yield* Effect.either(local);
+		if (Either.isRight(localResult)) {
+			return {
+				source: "local",
+				value: localResult.right,
+			} as const;
+		}
+
+		const proxied = yield* Effect.either(
+			proxyKoboHandlerOutput({
+				request,
+				token,
+				rawStoreToken,
+			}),
+		);
+		if (Either.isRight(proxied)) {
+			return {
+				source: "proxy",
+				output: proxied.right,
+			} as const;
+		}
+
+		return yield* Effect.fail(onLocalFailure(localResult.left));
+	});
+
 export const withKoboAuth = async <
 	TInput extends KoboRouteHandlerInput<KoboRouteParams & KoboTokenRouteParams>,
 >(
 	input: TInput,
 	handler: (
 		authorizedInput: KoboAuthorizedHandlerInput<TInput>,
-	) => Promise<KoboHandlerOutput>,
+	) => Effect.Effect<
+		KoboHandlerOutput,
+		KoboHandledError,
+		DatabaseContext | R2Context
+	>,
 ): Promise<Response> => {
 	const normalizedParams = normalizeParams<TInput["params"]>(input.params);
 	if (!normalizedParams) {
-		const response = koboJsonErrorResponse({
-			status: 400,
-			message: "Malformed route params",
-			code: "MalformedRouteParams",
-		});
+		const response = koboErrorResponseFromError(
+			new KoboMalformedRouteParams({}),
+		);
 		await logKoboApi({
 			request: input.request,
 			response,
@@ -138,11 +256,7 @@ export const withKoboAuth = async <
 	const auth = token ? await resolveAuthFromToken(token) : null;
 
 	if (!token || !auth) {
-		const response = koboJsonErrorResponse({
-			status: 401,
-			message: "Unauthorized",
-			code: "Unauthorized",
-		});
+		const response = koboErrorResponseFromError(new KoboUnauthorized({}));
 		await logKoboApi({
 			request: input.request,
 			response,
@@ -153,12 +267,23 @@ export const withKoboAuth = async <
 	}
 
 	try {
-		const output = await handler({
+		const handledEffect = handler({
 			request: input.request,
 			params: normalizedParams,
 			koboToken: token,
 			koboAuth: auth,
-		});
+		}).pipe(
+			Effect.provide(AppLayer),
+			Effect.match({
+				onFailure: (error) => ({
+					response: koboErrorResponseFromError(error),
+					isHandledInternally: true,
+				}),
+				onSuccess: (output) => output,
+			}),
+		);
+
+		const output = await Effect.runPromise(handledEffect);
 		await logKoboApi({
 			request: input.request,
 			response: output.response,
@@ -168,11 +293,7 @@ export const withKoboAuth = async <
 		return output.response;
 	} catch (error) {
 		console.error("Unhandled Kobo API handler error", error);
-		const response = koboJsonErrorResponse({
-			status: 500,
-			message: "Internal Server Error",
-			code: "InternalServerError",
-		});
+		const response = koboInternalServerErrorResponse();
 		await logKoboApi({
 			request: input.request,
 			response,

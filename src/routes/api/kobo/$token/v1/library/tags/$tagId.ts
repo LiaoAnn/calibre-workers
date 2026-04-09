@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect, Either } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
+import { Effect } from "effect";
 import {
 	encodeKoboSingleSpaceTextResponse,
 	KOBO_TEXT_HEADERS,
-	koboJsonErrorResponse,
-	mapTagError,
+	KoboEncodingFailure,
+	KoboMalformedRequest,
 	parseRenameTagBody,
 } from "#/lib/kobo.server";
 import { withKoboAuth } from "#/server/koboApi";
@@ -16,118 +15,75 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/tags/$tagId")(
 		server: {
 			handlers: {
 				DELETE: async (input) =>
-					withKoboAuth(input, async ({ params, koboAuth }) => {
-						const result = await Effect.runPromise(
-							Effect.either(
-								deleteKoboTag({
-									userId: koboAuth.userId,
-									tagId: params.tagId,
-								}).pipe(Effect.provide(AppLayer)),
-							),
-						);
+					withKoboAuth(input, ({ params, koboAuth }) =>
+						Effect.gen(function* () {
+							yield* deleteKoboTag({
+								userId: koboAuth.userId,
+								tagId: params.tagId,
+							});
 
-						if (Either.isLeft(result)) {
-							const { status, message, code } = mapTagError(result.left);
+							const encodedResponse = encodeKoboSingleSpaceTextResponse(" ");
+							if (!encodedResponse) {
+								return yield* Effect.fail(
+									new KoboEncodingFailure({
+										operation: "library.tag.encodeSingleSpace",
+									}),
+								);
+							}
+
 							return {
-								response: koboJsonErrorResponse({
-									status,
-									message,
-									code,
+								response: new Response(encodedResponse, {
+									status: 200,
+									headers: KOBO_TEXT_HEADERS,
 								}),
 								isHandledInternally: true,
 							};
-						}
-
-						const encodedResponse = encodeKoboSingleSpaceTextResponse(" ");
-						if (!encodedResponse) {
-							return {
-								response: koboJsonErrorResponse({
-									status: 500,
-									message: "Internal Server Error",
-									code: "InternalServerError",
-								}),
-								isHandledInternally: true,
-							};
-						}
-
-						return {
-							response: new Response(encodedResponse, {
-								status: 200,
-								headers: KOBO_TEXT_HEADERS,
-							}),
-							isHandledInternally: true,
-						};
-					}),
+						}),
+					),
 				PUT: async (input) =>
-					withKoboAuth(input, async ({ request, params, koboAuth }) => {
-						let body: unknown;
-						try {
-							body = (await request.clone().json()) as unknown;
-						} catch {
+					withKoboAuth(input, ({ request, params, koboAuth }) =>
+						Effect.gen(function* () {
+							const body = yield* Effect.tryPromise({
+								try: () => request.clone().json() as Promise<unknown>,
+								catch: () =>
+									new KoboMalformedRequest({
+										reason: "Malformed tags request",
+									}),
+							});
+
+							const name = parseRenameTagBody(body);
+							if (!name) {
+								return yield* Effect.fail(
+									new KoboMalformedRequest({
+										reason: "Malformed tags request",
+									}),
+								);
+							}
+
+							yield* renameKoboTag({
+								userId: koboAuth.userId,
+								tagId: params.tagId,
+								name,
+							});
+
+							const encodedResponse = encodeKoboSingleSpaceTextResponse(" ");
+							if (!encodedResponse) {
+								return yield* Effect.fail(
+									new KoboEncodingFailure({
+										operation: "library.tag.encodeSingleSpace",
+									}),
+								);
+							}
+
 							return {
-								response: koboJsonErrorResponse({
-									status: 400,
-									message: "Malformed tags request",
-									code: "MalformedRequest",
+								response: new Response(encodedResponse, {
+									status: 200,
+									headers: KOBO_TEXT_HEADERS,
 								}),
 								isHandledInternally: true,
 							};
-						}
-
-						const name = parseRenameTagBody(body);
-						if (!name) {
-							return {
-								response: koboJsonErrorResponse({
-									status: 400,
-									message: "Malformed tags request",
-									code: "MalformedRequest",
-								}),
-								isHandledInternally: true,
-							};
-						}
-
-						const result = await Effect.runPromise(
-							Effect.either(
-								renameKoboTag({
-									userId: koboAuth.userId,
-									tagId: params.tagId,
-									name,
-								}).pipe(Effect.provide(AppLayer)),
-							),
-						);
-
-						if (Either.isLeft(result)) {
-							const { status, message, code } = mapTagError(result.left);
-							return {
-								response: koboJsonErrorResponse({
-									status,
-									message,
-									code,
-								}),
-								isHandledInternally: true,
-							};
-						}
-
-						const encodedResponse = encodeKoboSingleSpaceTextResponse(" ");
-						if (!encodedResponse) {
-							return {
-								response: koboJsonErrorResponse({
-									status: 500,
-									message: "Internal Server Error",
-									code: "InternalServerError",
-								}),
-								isHandledInternally: true,
-							};
-						}
-
-						return {
-							response: new Response(encodedResponse, {
-								status: 200,
-								headers: KOBO_TEXT_HEADERS,
-							}),
-							isHandledInternally: true,
-						};
-					}),
+						}),
+					),
 			},
 		},
 	},

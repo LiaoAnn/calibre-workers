@@ -1,15 +1,82 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { Either, Schema } from "effect";
+import { Data, Either, Schema } from "effect";
 import type { ConfigError } from "effect/ConfigError";
-import type {
-	KoboTagAccessDenied,
-	KoboTagInvalidPayload,
-	KoboTagNotFound,
-} from "#/services/KoboService";
 
 export const KOBO_TEXT_HEADERS = {
 	"content-type": "text/plain; charset=utf-8",
 };
+
+export class KoboMalformedRouteParams extends Data.TaggedError(
+	"KoboMalformedRouteParams",
+)<Record<string, never>> {}
+
+export class KoboUnauthorized extends Data.TaggedError("KoboUnauthorized")<
+	Record<string, never>
+> {}
+
+export class KoboMalformedRequest extends Data.TaggedError(
+	"KoboMalformedRequest",
+)<{
+	readonly reason: string;
+	readonly code?: string;
+}> {}
+
+export class KoboMethodNotAllowed extends Data.TaggedError(
+	"KoboMethodNotAllowed",
+)<Record<string, never>> {}
+
+export class KoboEncodingFailure extends Data.TaggedError(
+	"KoboEncodingFailure",
+)<{
+	readonly operation: string;
+	readonly cause?: unknown;
+}> {}
+
+export class KoboBookNotFound extends Data.TaggedError("KoboBookNotFound")<{
+	readonly bookUuid?: string;
+}> {}
+
+export class KoboFileNotFound extends Data.TaggedError("KoboFileNotFound")<{
+	readonly bookId?: string;
+	readonly requestedFormat?: string;
+}> {}
+
+export class KoboTagNotFound extends Data.TaggedError("KoboTagNotFound")<{
+	readonly tagId: string;
+}> {}
+
+export class KoboTagAccessDenied extends Data.TaggedError(
+	"KoboTagAccessDenied",
+)<{
+	readonly tagId: string;
+	readonly userId: string;
+}> {}
+
+export class KoboTagInvalidPayload extends Data.TaggedError(
+	"KoboTagInvalidPayload",
+)<{
+	readonly reason: string;
+}> {}
+
+interface KoboNormalizedError {
+	readonly status: number;
+	readonly message: string;
+	readonly code: string;
+}
+
+export type KoboHandledError =
+	| KoboMalformedRouteParams
+	| KoboUnauthorized
+	| KoboMalformedRequest
+	| KoboMethodNotAllowed
+	| KoboEncodingFailure
+	| KoboBookNotFound
+	| KoboFileNotFound
+	| KoboTagAccessDenied
+	| KoboTagNotFound
+	| KoboTagInvalidPayload
+	| SqlError
+	| ConfigError;
 
 const KoboReadStatusSchema = Schema.Literal(
 	"ReadyToRead",
@@ -385,7 +452,7 @@ export const koboJsonResponse = (
 	});
 };
 
-export const koboJsonErrorResponse = ({
+const koboJsonErrorResponse = ({
 	status,
 	message,
 	code,
@@ -406,6 +473,91 @@ export const koboJsonErrorResponse = ({
 		},
 	);
 };
+
+const KOBO_INTERNAL_SERVER_ERROR: KoboNormalizedError = {
+	status: 500,
+	message: "Internal Server Error",
+	code: "InternalServerError",
+};
+
+type KoboErrorMapEntry =
+	| KoboNormalizedError
+	| ((error: KoboHandledError) => KoboNormalizedError);
+
+const KOBO_ERROR_MAP_BY_TAG: Readonly<
+	Record<KoboHandledError["_tag"], KoboErrorMapEntry>
+> = {
+	KoboMalformedRequest: (error) => ({
+		status: 400,
+		message:
+			error instanceof KoboMalformedRequest
+				? error.reason || "Malformed request"
+				: "Malformed request",
+		code:
+			error instanceof KoboMalformedRequest
+				? (error.code ?? "MalformedRequest")
+				: "MalformedRequest",
+	}),
+	KoboMalformedRouteParams: {
+		status: 400,
+		message: "Malformed route params",
+		code: "MalformedRouteParams",
+	},
+	KoboUnauthorized: {
+		status: 401,
+		message: "Unauthorized",
+		code: "Unauthorized",
+	},
+	KoboTagAccessDenied: {
+		status: 401,
+		message: "Unauthorized",
+		code: "Unauthorized",
+	},
+	KoboMethodNotAllowed: {
+		status: 405,
+		message: "Method Not Allowed",
+		code: "MethodNotAllowed",
+	},
+	KoboTagNotFound: {
+		status: 404,
+		message: "Collection isn't known to server",
+		code: "KoboTagNotFound",
+	},
+	KoboTagInvalidPayload: {
+		status: 400,
+		message: "Malformed tags request",
+		code: "MalformedRequest",
+	},
+	KoboBookNotFound: {
+		status: 404,
+		message: "Book not found",
+		code: "BookNotFound",
+	},
+	KoboFileNotFound: {
+		status: 404,
+		message: "File not found",
+		code: "FileNotFound",
+	},
+	KoboEncodingFailure: KOBO_INTERNAL_SERVER_ERROR,
+	SqlError: KOBO_INTERNAL_SERVER_ERROR,
+	ConfigError: KOBO_INTERNAL_SERVER_ERROR,
+};
+
+export const koboErrorResponseFromError = (
+	error: KoboHandledError,
+): Response => {
+	const entry = KOBO_ERROR_MAP_BY_TAG[error._tag];
+	if (!entry) {
+		return koboJsonErrorResponse(KOBO_INTERNAL_SERVER_ERROR);
+	}
+
+	return koboJsonErrorResponse(
+		typeof entry === "function" ? entry(error) : entry,
+	);
+};
+
+export const koboInternalServerErrorResponse = (): Response =>
+	koboJsonErrorResponse(KOBO_INTERNAL_SERVER_ERROR);
 
 export const parseCreateTagBody = (
 	value: unknown,
@@ -473,42 +625,6 @@ export const parseReadingStatePayload = (
 
 	const readingState = decoded.right.ReadingStates[0];
 	return readingState ? { readingState } : {};
-};
-
-export const mapTagError = (
-	error:
-		| KoboTagAccessDenied
-		| SqlError
-		| ConfigError
-		| KoboTagNotFound
-		| KoboTagInvalidPayload,
-): { status: number; message: string; code: string } => {
-	const tag = error._tag;
-	if (tag === "KoboTagNotFound") {
-		return {
-			status: 404,
-			message: "Collection isn't known to server",
-			code: "KoboTagNotFound",
-		};
-	}
-
-	if (tag === "KoboTagAccessDenied") {
-		return { status: 401, message: "Unauthorized", code: "Unauthorized" };
-	}
-
-	if (tag === "KoboTagInvalidPayload") {
-		return {
-			status: 400,
-			message: "Malformed tags request",
-			code: "MalformedRequest",
-		};
-	}
-
-	return {
-		status: 500,
-		message: "Internal Server Error",
-		code: "InternalServerError",
-	};
 };
 
 export const koboInitializationResourceSnapshot: Record<string, unknown> = {

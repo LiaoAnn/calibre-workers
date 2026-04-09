@@ -1,60 +1,59 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
+import { Effect, Either } from "effect";
 import {
 	encodeKoboAuthResponse,
-	koboJsonErrorResponse,
+	KoboEncodingFailure,
 	koboJsonResponse,
 	parseDeviceAuthBody,
 } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
-import {
-	buildDummyAuthResponse,
-	proxyKoboRequest,
-} from "#/services/KoboService";
+import { proxyKoboHandlerOutput, withKoboAuth } from "#/server/koboApi";
+import { buildDummyAuthResponse } from "#/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/auth/refresh")({
 	server: {
 		handlers: {
 			POST: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) => {
-					try {
-						const { response } = await Effect.runPromise(
-							proxyKoboRequest({
-								request: request.clone(),
+				withKoboAuth(input, ({ request, koboToken }) =>
+					Effect.gen(function* () {
+						const proxied = yield* Effect.either(
+							proxyKoboHandlerOutput({
+								request,
 								token: koboToken,
-							}).pipe(Effect.provide(AppLayer)),
+							}),
 						);
-						return { response, isHandledInternally: false };
-					} catch {
-						let userKey: string | null = null;
-						try {
-							const body = (await request.clone().json()) as unknown;
-							const parsedBody = parseDeviceAuthBody(body);
-							userKey = parsedBody?.userKey ?? null;
-						} catch {
-							userKey = null;
+
+						if (Either.isRight(proxied)) {
+							return proxied.right;
 						}
+
+						const parsedBodyResult = yield* Effect.either(
+							Effect.tryPromise({
+								try: () => request.clone().json() as Promise<unknown>,
+								catch: () => null,
+							}),
+						);
+
+						const parsedBody = Either.isRight(parsedBodyResult)
+							? parseDeviceAuthBody(parsedBodyResult.right)
+							: null;
+						const userKey = parsedBody?.userKey ?? null;
 
 						const fallback = buildDummyAuthResponse(userKey);
 						const encodedFallback = encodeKoboAuthResponse(fallback);
 						if (!encodedFallback) {
-							return {
-								response: koboJsonErrorResponse({
-									status: 500,
-									message: "Internal Server Error",
-									code: "InternalServerError",
+							return yield* Effect.fail(
+								new KoboEncodingFailure({
+									operation: "auth.refresh.encodeFallbackResponse",
 								}),
-								isHandledInternally: true,
-							};
+							);
 						}
 
 						return {
 							response: koboJsonResponse(encodedFallback, { status: 200 }),
 							isHandledInternally: true,
 						};
-					}
-				}),
+					}),
+				),
 		},
 	},
 });

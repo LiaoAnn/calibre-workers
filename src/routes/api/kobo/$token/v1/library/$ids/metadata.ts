@@ -1,16 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect, Either } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
+import { Effect } from "effect";
 import {
 	encodeKoboMetadataList,
-	koboJsonErrorResponse,
+	KoboBookNotFound,
+	KoboEncodingFailure,
+	KoboMalformedRequest,
 	koboJsonResponse,
 } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
-import {
-	getBookMetadataByUuid,
-	proxyKoboRequest,
-} from "#/services/KoboService";
+import { resolveKoboLocalOrProxy, withKoboAuth } from "#/server/koboApi";
+import { getBookMetadataByUuid } from "#/services/KoboService";
 
 const parseIds = (value: string): string[] =>
 	value
@@ -24,79 +22,57 @@ export const Route = createFileRoute(
 	server: {
 		handlers: {
 			GET: async (input) =>
-				withKoboAuth(input, async ({ request, params, koboToken }) => {
-					const ids = parseIds(params.ids);
-					if (ids.length === 0) {
-						return {
-							response: koboJsonErrorResponse({
-								status: 400,
-								message: "Malformed metadata request",
-								code: "MalformedRequest",
-							}),
-							isHandledInternally: true,
-						};
-					}
+				withKoboAuth(input, ({ request, params, koboToken }) =>
+					Effect.gen(function* () {
+						const ids = parseIds(params.ids);
+						if (ids.length === 0) {
+							return yield* Effect.fail(
+								new KoboMalformedRequest({
+									reason: "Malformed metadata request",
+								}),
+							);
+						}
 
-					const origin = new URL(request.url).origin;
-					const metadataPayload: unknown[] = [];
+						const origin = new URL(request.url).origin;
+						const metadataPayload: unknown[] = [];
 
-					for (const bookUuid of ids) {
-						const result = await Effect.runPromise(
-							Effect.either(
-								getBookMetadataByUuid({
+						for (const bookUuid of ids) {
+							const result = yield* resolveKoboLocalOrProxy({
+								local: getBookMetadataByUuid({
 									bookUuid,
 									origin,
 									token: koboToken,
-								}).pipe(Effect.provide(AppLayer)),
-							),
-						);
+								}),
+								request,
+								token: koboToken,
+								onLocalFailure: () => new KoboBookNotFound({ bookUuid }),
+							});
 
-						if (Either.isLeft(result)) {
-							try {
-								const { response } = await Effect.runPromise(
-									proxyKoboRequest({
-										request: request.clone(),
-										token: koboToken,
-									}).pipe(Effect.provide(AppLayer)),
-								);
-
-								return {
-									response,
-									isHandledInternally: false,
-								};
-							} catch {
-								return {
-									response: koboJsonErrorResponse({
-										status: 404,
-										message: "Book not found",
-										code: "BookNotFound",
-									}),
-									isHandledInternally: true,
-								};
+							if (result.source === "proxy") {
+								return result.output;
 							}
+
+							metadataPayload.push(result.value);
 						}
 
-						metadataPayload.push(result.right);
-					}
+						const encodedMetadataPayload =
+							encodeKoboMetadataList(metadataPayload);
+						if (!encodedMetadataPayload) {
+							return yield* Effect.fail(
+								new KoboEncodingFailure({
+									operation: "library.metadata.encodeList",
+								}),
+							);
+						}
 
-					const encodedMetadataPayload =
-						encodeKoboMetadataList(metadataPayload);
-					if (!encodedMetadataPayload) {
 						return {
-							response: koboJsonErrorResponse({
-								status: 500,
-								message: "Internal Server Error",
-								code: "InternalServerError",
+							response: koboJsonResponse(encodedMetadataPayload, {
+								status: 200,
 							}),
 							isHandledInternally: true,
 						};
-					}
-
-					return {
-						response: koboJsonResponse(encodedMetadataPayload, { status: 200 }),
-						isHandledInternally: true,
-					};
-				}),
+					}),
+				),
 		},
 	},
 });

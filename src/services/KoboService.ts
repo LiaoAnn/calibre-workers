@@ -8,15 +8,19 @@ import {
 	type KoboAuthResponse,
 	type KoboBookEntitlement,
 	type KoboBookMetadata,
+	KoboBookNotFound,
 	type KoboDownloadUrl,
+	KoboFileNotFound,
 	type KoboLocalSyncItem,
 	type KoboReadingStateResponse,
+	KoboTagAccessDenied,
+	KoboTagInvalidPayload,
+	KoboTagNotFound,
 	type KoboTagPayload,
 	parseReadingStatePayload,
 } from "#/lib/kobo.server";
 import { createConversionJob } from "#/services/ConversionService";
 
-const KOBO_STORE_API_URL = "https://storeapi.kobo.com";
 const SYNC_TOKEN_HEADER = "x-kobo-synctoken";
 const SYNC_TOKEN_VERSION = "1-1-0";
 const SYNC_ITEM_LIMIT = 100;
@@ -28,32 +32,6 @@ const KOBO_DEFAULT_CATEGORY_ID = "00000000-0000-0000-0000-000000000001";
 
 class KoboAuthTokenNotFound extends Data.TaggedError("KoboAuthTokenNotFound")<{
 	readonly token: string;
-}> {}
-
-class KoboBookNotFound extends Data.TaggedError("KoboBookNotFound")<{
-	readonly bookUuid: string;
-}> {}
-
-class KoboFileNotFound extends Data.TaggedError("KoboFileNotFound")<{
-	readonly bookId: string;
-	readonly requestedFormat: string;
-}> {}
-
-export class KoboTagNotFound extends Data.TaggedError("KoboTagNotFound")<{
-	readonly tagId: string;
-}> {}
-
-export class KoboTagAccessDenied extends Data.TaggedError(
-	"KoboTagAccessDenied",
-)<{
-	readonly tagId: string;
-	readonly userId: string;
-}> {}
-
-export class KoboTagInvalidPayload extends Data.TaggedError(
-	"KoboTagInvalidPayload",
-)<{
-	readonly reason: string;
 }> {}
 
 export interface KoboAuthTokenContext {
@@ -101,8 +79,6 @@ interface BodySerializablePayload {
 	formData(): Promise<FormData>;
 	arrayBuffer(): Promise<ArrayBuffer>;
 }
-
-type ProxyRequestPayload = Pick<Request, "url" | "headers" | "method" | "body">;
 
 const now = () => new Date();
 
@@ -229,21 +205,6 @@ const normalizeProgressValue = (value: number): number =>
 
 const isEditableShelfRole = (role: schema.ShelfMemberRole): boolean =>
 	role === "owner" || role === "editor";
-
-const buildStoreUrl = (requestUrl: URL, token: string) => {
-	const prefix = `/api/kobo/${token}`;
-	const relativePath = requestUrl.pathname.startsWith(prefix)
-		? requestUrl.pathname.slice(prefix.length) || "/"
-		: requestUrl.pathname;
-	const normalizedPath = relativePath.startsWith("/")
-		? relativePath
-		: `/${relativePath}`;
-
-	return {
-		url: `${KOBO_STORE_API_URL}${normalizedPath}${requestUrl.search}`,
-		path: `${normalizedPath}${requestUrl.search}`,
-	};
-};
 
 const encodeSyncToken = (syncToken: KoboSyncToken) => {
 	const payload = {
@@ -770,44 +731,6 @@ export const setSyncTokenHeader = (
 ) => {
 	headers.set(SYNC_TOKEN_HEADER, encodeSyncToken(syncToken));
 };
-
-export const proxyKoboRequest = ({
-	request,
-	token,
-	rawStoreToken,
-}: {
-	request: ProxyRequestPayload;
-	token: string;
-	rawStoreToken?: string;
-}) =>
-	Effect.tryPromise({
-		try: async () => {
-			const requestUrl = new URL(request.url);
-			const { url, path } = buildStoreUrl(requestUrl, token);
-			const outgoingHeaders = new Headers(request.headers);
-			outgoingHeaders.delete("host");
-			if (rawStoreToken) {
-				outgoingHeaders.set(SYNC_TOKEN_HEADER, rawStoreToken);
-			}
-
-			const proxyRequest = new Request(url, {
-				method: request.method,
-				headers: outgoingHeaders,
-				body:
-					request.method === "GET" || request.method === "HEAD"
-						? null
-						: request.body,
-				redirect: "manual",
-			});
-
-			const response = await fetch(proxyRequest);
-			return { response, path };
-		},
-		catch: (cause) =>
-			new Error(
-				`Kobo proxy failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-			),
-	});
 
 export const buildInitializationResources = ({
 	origin,

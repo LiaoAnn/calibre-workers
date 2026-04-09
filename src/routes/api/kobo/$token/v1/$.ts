@@ -1,15 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
+import { Effect, Either } from "effect";
 import {
 	encodeKoboAnalyticsTestsResponse,
 	encodeKoboBenefitsResponse,
 	encodeKoboEmptyObjectResponse,
-	koboJsonErrorResponse,
+	KoboEncodingFailure,
 	koboJsonResponse,
 } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
-import { proxyKoboRequest } from "#/services/KoboService";
+import { proxyKoboHandlerOutput, withKoboAuth } from "#/server/koboApi";
 
 type RequestLike = Pick<
 	Request,
@@ -32,100 +30,98 @@ const buildFallbackResponse = ({
 }: {
 	request: RequestLike;
 	v1Path: string;
-}): Response => {
-	if (v1Path === "user/loyalty/benefits") {
-		const payload = encodeKoboBenefitsResponse({ Benefits: {} });
-		if (!payload) {
-			return koboJsonErrorResponse({
-				status: 500,
-				message: "Internal Server Error",
-				code: "InternalServerError",
+}) =>
+	Effect.gen(function* () {
+		if (v1Path === "user/loyalty/benefits") {
+			const payload = encodeKoboBenefitsResponse({ Benefits: {} });
+			if (!payload) {
+				return yield* Effect.fail(
+					new KoboEncodingFailure({
+						operation: "v1.catchall.encodeBenefits",
+					}),
+				);
+			}
+
+			return koboJsonResponse(payload, { status: 200 });
+		}
+
+		if (v1Path === "analytics/gettests") {
+			const userKey = request.headers.get("x-kobo-userkey") ?? "";
+			const payload = encodeKoboAnalyticsTestsResponse({
+				Result: "Success",
+				TestKey: userKey,
+				Tests: {},
 			});
+			if (!payload) {
+				return yield* Effect.fail(
+					new KoboEncodingFailure({
+						operation: "v1.catchall.encodeAnalyticsTests",
+					}),
+				);
+			}
+
+			return koboJsonResponse(payload, { status: 200 });
+		}
+
+		const payload = encodeKoboEmptyObjectResponse({});
+		if (!payload) {
+			return yield* Effect.fail(
+				new KoboEncodingFailure({
+					operation: "v1.catchall.encodeEmptyObject",
+				}),
+			);
 		}
 
 		return koboJsonResponse(payload, { status: 200 });
-	}
+	});
 
-	if (v1Path === "analytics/gettests") {
-		const userKey = request.headers.get("x-kobo-userkey") ?? "";
-		const payload = encodeKoboAnalyticsTestsResponse({
-			Result: "Success",
-			TestKey: userKey,
-			Tests: {},
-		});
-		if (!payload) {
-			return koboJsonErrorResponse({
-				status: 500,
-				message: "Internal Server Error",
-				code: "InternalServerError",
-			});
-		}
-
-		return koboJsonResponse(payload, { status: 200 });
-	}
-
-	const payload = encodeKoboEmptyObjectResponse({});
-	if (!payload) {
-		return koboJsonErrorResponse({
-			status: 500,
-			message: "Internal Server Error",
-			code: "InternalServerError",
-		});
-	}
-
-	return koboJsonResponse(payload, { status: 200 });
-};
-
-const handleKoboV1FallbackRoute = async ({
+const handleKoboV1FallbackRoute = ({
 	request,
 	koboToken,
 }: {
 	request: RequestLike;
 	koboToken: string;
-}) => {
-	const v1Path = getV1RelativePath(new URL(request.url).pathname);
-
-	try {
-		const { response } = await Effect.runPromise(
-			proxyKoboRequest({
-				request: request.clone(),
+}) =>
+	Effect.gen(function* () {
+		const v1Path = getV1RelativePath(new URL(request.url).pathname);
+		const proxied = yield* Effect.either(
+			proxyKoboHandlerOutput({
+				request,
 				token: koboToken,
-			}).pipe(Effect.provide(AppLayer)),
+			}),
 		);
 
+		if (Either.isRight(proxied)) {
+			return proxied.right;
+		}
+
 		return {
-			response,
-			isHandledInternally: false,
-		};
-	} catch {
-		return {
-			response: buildFallbackResponse({ request, v1Path }),
+			response: yield* buildFallbackResponse({ request, v1Path }),
 			isHandledInternally: true,
 		};
-	}
-};
+	});
 
 export const Route = createFileRoute("/api/kobo/$token/v1/$")({
 	server: {
 		handlers: {
 			DELETE: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) =>
+				withKoboAuth(input, ({ request, koboToken }) =>
 					handleKoboV1FallbackRoute({ request, koboToken }),
 				),
 			GET: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) =>
+				withKoboAuth(input, ({ request, koboToken }) =>
 					handleKoboV1FallbackRoute({ request, koboToken }),
 				),
 			PATCH: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) =>
+				withKoboAuth(input, ({ request, koboToken }) =>
 					handleKoboV1FallbackRoute({ request, koboToken }),
 				),
 			POST: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) =>
+				withKoboAuth(input, ({ request, koboToken }) =>
 					handleKoboV1FallbackRoute({ request, koboToken }),
 				),
 			PUT: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) =>
+				withKoboAuth(input, ({ request, koboToken }) =>
 					handleKoboV1FallbackRoute({ request, koboToken }),
 				),
 		},

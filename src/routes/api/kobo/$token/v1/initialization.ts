@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Effect } from "effect";
 import {
 	encodeKoboInitializationResponse,
+	KoboEncodingFailure,
 	koboInitializationResourceSnapshot,
-	koboJsonErrorResponse,
 	koboJsonResponse,
 } from "#/lib/kobo.server";
 import { withKoboAuth } from "#/server/koboApi";
@@ -12,41 +13,39 @@ export const Route = createFileRoute("/api/kobo/$token/v1/initialization")({
 	server: {
 		handlers: {
 			GET: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken }) => {
-					const origin = new URL(request.url).origin;
+				withKoboAuth(input, ({ request, koboToken }) =>
+					Effect.gen(function* () {
+						const origin = new URL(request.url).origin;
 
-					const resources = buildInitializationResources({
-						origin,
-						token: koboToken,
-						upstreamResources: koboInitializationResourceSnapshot,
-					});
+						const resources = buildInitializationResources({
+							origin,
+							token: koboToken,
+							upstreamResources: koboInitializationResourceSnapshot,
+						});
 
-					const encodedInitializationPayload = encodeKoboInitializationResponse(
-						{ Resources: resources },
-					);
-					if (!encodedInitializationPayload) {
+						const encodedInitializationPayload =
+							encodeKoboInitializationResponse({ Resources: resources });
+						if (!encodedInitializationPayload) {
+							return yield* Effect.fail(
+								new KoboEncodingFailure({
+									operation: "initialization.encodeResponse",
+								}),
+							);
+						}
+
+						const response = koboJsonResponse(encodedInitializationPayload, {
+							status: 200,
+							headers: {
+								"x-kobo-apitoken": "e30=",
+							},
+						});
+
 						return {
-							response: koboJsonErrorResponse({
-								status: 500,
-								message: "Internal Server Error",
-								code: "InternalServerError",
-							}),
+							response,
 							isHandledInternally: true,
 						};
-					}
-
-					const response = koboJsonResponse(encodedInitializationPayload, {
-						status: 200,
-						headers: {
-							"x-kobo-apitoken": "e30=",
-						},
-					});
-
-					return {
-						response,
-						isHandledInternally: true,
-					};
-				}),
+					}),
+				),
 		},
 	},
 });

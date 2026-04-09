@@ -1,19 +1,17 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
+import { Effect, Either } from "effect";
 import {
 	encodeKoboLocalSyncResults,
-	koboJsonErrorResponse,
+	KoboEncodingFailure,
 	koboJsonResponse,
 } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
+import { proxyKoboHandlerOutput, withKoboAuth } from "#/server/koboApi";
 import {
 	buildLocalLibrarySync,
 	copySyncHeadersFromUpstream,
 	createMissingKepubConversionJobs,
 	parseKoboSyncTokenFromHeaders,
-	proxyKoboRequest,
 	setRawStoreSyncTokenFromResponse,
 	setSyncTokenHeader,
 } from "#/services/KoboService";
@@ -22,98 +20,108 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/sync")({
 	server: {
 		handlers: {
 			GET: async (input) =>
-				withKoboAuth(input, async ({ request, koboToken, koboAuth }) => {
-					const syncToken = parseKoboSyncTokenFromHeaders(request.headers);
-					const origin = new URL(request.url).origin;
+				withKoboAuth(input, ({ request, koboToken, koboAuth }) =>
+					Effect.gen(function* () {
+						const syncToken = parseKoboSyncTokenFromHeaders(request.headers);
+						const origin = new URL(request.url).origin;
 
-					const localSync = await Effect.runPromise(
-						buildLocalLibrarySync({
+						const localSync = yield* buildLocalLibrarySync({
 							userId: koboAuth.userId,
 							token: koboToken,
 							origin,
 							syncToken,
-						}).pipe(Effect.provide(AppLayer)),
-					);
+						});
 
-					if (localSync.pendingConversions.length > 0) {
-						const jobIds = await Effect.runPromise(
-							createMissingKepubConversionJobs(
+						if (localSync.pendingConversions.length > 0) {
+							const jobIds = yield* createMissingKepubConversionJobs(
 								localSync.pendingConversions,
-							).pipe(Effect.provide(AppLayer)),
-						);
+							);
 
-						if (jobIds.length > 0) {
-							try {
-								await Promise.all(
-									jobIds.map((jobId) => env.CONVERSION_QUEUE.send({ jobId })),
+							if (jobIds.length > 0) {
+								const enqueueResult = yield* Effect.either(
+									Effect.tryPromise({
+										try: () =>
+											Promise.all(
+												jobIds.map((jobId) =>
+													env.CONVERSION_QUEUE.send({ jobId }),
+												),
+											),
+										catch: (error) => error,
+									}),
 								);
-							} catch (error) {
-								console.error("Failed to enqueue Kobo sync conversion jobs", {
-									jobIds,
-									error,
-								});
+
+								if (Either.isLeft(enqueueResult)) {
+									console.error("Failed to enqueue Kobo sync conversion jobs", {
+										jobIds,
+										error: enqueueResult.left,
+									});
+								}
 							}
 						}
-					}
 
-					const encodedLocalSyncResults = encodeKoboLocalSyncResults(
-						localSync.syncResults,
-					);
-					if (!encodedLocalSyncResults) {
-						return {
-							response: koboJsonErrorResponse({
-								status: 500,
-								message: "Internal Server Error",
-								code: "InternalServerError",
-							}),
-							isHandledInternally: true,
-						};
-					}
+						const encodedLocalSyncResults = encodeKoboLocalSyncResults(
+							localSync.syncResults,
+						);
+						if (!encodedLocalSyncResults) {
+							return yield* Effect.fail(
+								new KoboEncodingFailure({
+									operation: "library.sync.encodeLocalSyncResults",
+								}),
+							);
+						}
 
-					let syncResults: unknown[] = [...encodedLocalSyncResults];
-					const headers = new Headers();
-					headers.set("content-type", "application/json; charset=utf-8");
+						let syncResults: unknown[] = [...encodedLocalSyncResults];
+						const headers = new Headers();
+						headers.set("content-type", "application/json; charset=utf-8");
 
-					if (localSync.continueSync) {
-						headers.set("x-kobo-sync", "continue");
-					} else {
-						try {
-							const { response } = await Effect.runPromise(
-								proxyKoboRequest({
-									request: request.clone(),
+						if (localSync.continueSync) {
+							headers.set("x-kobo-sync", "continue");
+						} else {
+							const proxied = yield* Effect.either(
+								proxyKoboHandlerOutput({
+									request,
 									token: koboToken,
 									rawStoreToken:
 										localSync.syncToken.rawKoboStoreToken || undefined,
-								}).pipe(Effect.provide(AppLayer)),
+								}),
 							);
 
-							setRawStoreSyncTokenFromResponse({
-								syncToken: localSync.syncToken,
-								upstreamResponse: response,
-							});
-							copySyncHeadersFromUpstream({
-								upstreamResponse: response,
-								outgoing: headers,
-							});
+							if (Either.isRight(proxied)) {
+								setRawStoreSyncTokenFromResponse({
+									syncToken: localSync.syncToken,
+									upstreamResponse: proxied.right.response,
+								});
+								copySyncHeadersFromUpstream({
+									upstreamResponse: proxied.right.response,
+									outgoing: headers,
+								});
 
-							const upstreamResults = (await response
-								.clone()
-								.json()) as unknown;
-							if (Array.isArray(upstreamResults)) {
-								syncResults = syncResults.concat(upstreamResults);
+								const upstreamResultsResult = yield* Effect.either(
+									Effect.tryPromise({
+										try: () =>
+											proxied.right.response.clone().json() as Promise<unknown>,
+										catch: () => null,
+									}),
+								);
+
+								if (
+									Either.isRight(upstreamResultsResult) &&
+									Array.isArray(upstreamResultsResult.right)
+								) {
+									syncResults = syncResults.concat(upstreamResultsResult.right);
+								}
 							}
-						} catch {
 							// Sync falls back to local catalog when upstream is unavailable.
 						}
-					}
 
-					setSyncTokenHeader(headers, localSync.syncToken);
+						setSyncTokenHeader(headers, localSync.syncToken);
 
-					return {
-						response: koboJsonResponse(syncResults, { status: 200, headers }),
-						isHandledInternally: true,
-					};
-				}),
+						return {
+							response: koboJsonResponse(syncResults, { status: 200, headers }),
+							isHandledInternally: true,
+						};
+					}),
+				),
 		},
 	},
 });
