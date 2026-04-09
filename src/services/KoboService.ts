@@ -1,11 +1,10 @@
 import "@tanstack/react-start/server-only";
 
 import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 import {
-	type KoboAuthResponse,
 	type KoboBookEntitlement,
 	type KoboBookMetadata,
 	KoboBookNotFound,
@@ -24,21 +23,10 @@ import { createConversionJob } from "#/services/ConversionService";
 const SYNC_TOKEN_HEADER = "x-kobo-synctoken";
 const SYNC_TOKEN_VERSION = "1-1-0";
 const SYNC_ITEM_LIMIT = 100;
-const MAX_LOG_BODY_BYTES = 64 * 1024;
 const KOBO_DEFAULT_CATEGORY_ID = "00000000-0000-0000-0000-000000000001";
 
 // Kobo sync is a hybrid of local catalog + optional upstream store pass-through.
 // This service keeps protocol-specific mapping isolated from route handlers.
-
-class KoboAuthTokenNotFound extends Data.TaggedError("KoboAuthTokenNotFound")<{
-	readonly token: string;
-}> {}
-
-export interface KoboAuthTokenContext {
-	authTokenId: string;
-	token: string;
-	userId: string;
-}
 
 const KOBO_ENTITLEMENT_ORIGIN_CATEGORY = "Imported" as const;
 const KOBO_ENTITLEMENT_STATUS = "Active" as const;
@@ -73,13 +61,6 @@ interface KoboDownloadFileResult {
 	conversionSourceFileId: string | null;
 }
 
-interface BodySerializablePayload {
-	body: ReadableStream | null;
-	headers: Headers;
-	formData(): Promise<FormData>;
-	arrayBuffer(): Promise<ArrayBuffer>;
-}
-
 const now = () => new Date();
 
 const toKoboTimestamp = (value: Date | number | null | undefined) => {
@@ -109,81 +90,10 @@ const randomToken = () => {
 		.join("");
 };
 
-const toBase64 = (bytes: Uint8Array) => {
-	let binary = "";
-	const chunkSize = 0x8000;
-	for (let i = 0; i < bytes.length; i += chunkSize) {
-		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-	}
-	return btoa(binary);
-};
-
-const parseJsonSafe = (text: string): unknown | undefined => {
-	try {
-		return JSON.parse(text) as unknown;
-	} catch {
-		return undefined;
-	}
-};
-
-const isJsonContentType = (contentType: string): boolean =>
-	contentType.includes("application/json") || contentType.includes("+json");
-
-const isFormContentType = (contentType: string): boolean =>
-	contentType.includes("multipart/form-data") ||
-	contentType.includes("application/x-www-form-urlencoded");
-
-const isTextContentType = (contentType: string): boolean =>
-	contentType.startsWith("text/") ||
-	contentType.includes("application/xml") ||
-	contentType.includes("application/xhtml+xml") ||
-	contentType.includes("application/javascript") ||
-	contentType.includes("application/x-javascript") ||
-	contentType.includes("application/ecmascript") ||
-	contentType.includes("image/svg+xml");
-
-const appendFormValue = (
-	target: Record<string, unknown>,
-	key: string,
-	value: unknown,
-) => {
-	const existing = target[key];
-	if (existing === undefined) {
-		target[key] = value;
-		return;
-	}
-
-	if (Array.isArray(existing)) {
-		existing.push(value);
-		return;
-	}
-
-	target[key] = [existing, value];
-};
-
-const headersToRecord = (headers: Headers): Record<string, string> => {
-	const out: Record<string, string> = {};
-	headers.forEach((value, key) => {
-		out[key] = value;
-	});
-	return out;
-};
-
 const decodeSyncTokenPayload = (raw: string): unknown => {
 	const padded = raw + "=".repeat((4 - (raw.length % 4)) % 4);
 	const jsonText = atob(padded);
 	return JSON.parse(jsonText) as unknown;
-};
-
-const clampBodyBytes = (bytes: Uint8Array) => {
-	if (bytes.byteLength <= MAX_LOG_BODY_BYTES) {
-		return { bytes, truncated: false };
-	}
-
-	return {
-		bytes: bytes.subarray(0, MAX_LOG_BODY_BYTES),
-		truncated: true,
-	};
 };
 
 const getStatusOrDefault = (
@@ -526,110 +436,6 @@ const getKoboReadingStateResponse = ({
 	};
 };
 
-export const serializeBody = async (
-	payload: BodySerializablePayload,
-): Promise<schema.KoboLoggedBody> => {
-	if (!payload.body) {
-		return { type: "empty" };
-	}
-
-	const contentType = (payload.headers.get("content-type") ?? "").toLowerCase();
-
-	if (isFormContentType(contentType)) {
-		const formData = await payload.formData();
-		const form: Record<string, unknown> = {};
-
-		for (const [key, value] of formData.entries()) {
-			if (typeof value === "string") {
-				appendFormValue(form, key, value);
-				continue;
-			}
-
-			const raw = new Uint8Array(await value.arrayBuffer());
-			const { bytes, truncated } = clampBodyBytes(raw);
-			appendFormValue(form, key, {
-				kind: "file",
-				name: value.name,
-				contentType: value.type || "application/octet-stream",
-				size: value.size,
-				encoding: "base64",
-				data: toBase64(bytes),
-				truncated,
-			});
-		}
-
-		return { type: "form", value: form };
-	}
-
-	const raw = new Uint8Array(await payload.arrayBuffer());
-	if (raw.byteLength === 0) {
-		return { type: "empty" };
-	}
-
-	const { bytes, truncated } = clampBodyBytes(raw);
-	const text = new TextDecoder().decode(bytes);
-
-	if (isJsonContentType(contentType) && !truncated) {
-		const parsed = parseJsonSafe(text);
-		if (parsed !== undefined) {
-			return { type: "json", value: parsed };
-		}
-	}
-
-	if (isTextContentType(contentType)) {
-		return {
-			type: "text",
-			contentType: contentType || "text/plain",
-			value: text,
-			truncated,
-		};
-	}
-
-	return {
-		type: "binary",
-		contentType: contentType || "application/octet-stream",
-		encoding: "base64",
-		value: toBase64(bytes),
-		truncated,
-	};
-};
-
-export const persistKoboApiLog = ({
-	authTokenId,
-	method,
-	requestUrl,
-	isHandledInternally,
-	requestHeaders,
-	requestBody,
-	response,
-	responseBody,
-}: {
-	authTokenId: string | null;
-	method: string;
-	requestUrl: URL;
-	isHandledInternally: boolean;
-	requestHeaders: Headers;
-	requestBody: schema.KoboLoggedBody;
-	response: Response;
-	responseBody: schema.KoboLoggedBody;
-}) =>
-	Effect.gen(function* () {
-		const database = yield* DatabaseContext;
-		yield* database.insert(schema.koboApiLogs).values({
-			id: crypto.randomUUID(),
-			authTokenId,
-			method,
-			path: requestUrl.pathname,
-			query: requestUrl.search || null,
-			isHandledInternally,
-			requestHeaders: headersToRecord(requestHeaders),
-			requestBody,
-			responseStatus: response.status,
-			responseHeaders: headersToRecord(response.headers),
-			responseBody,
-		});
-	});
-
 export const createKoboAuthToken = (userId: string) =>
 	Effect.gen(function* () {
 		const database = yield* DatabaseContext;
@@ -696,32 +502,6 @@ export const listKoboAuthTokensForUser = (userId: string) =>
 			.orderBy(desc(schema.koboAuthTokens.createdAt));
 	});
 
-export const resolveKoboAuthToken = (token: string) =>
-	Effect.gen(function* () {
-		const database = yield* DatabaseContext;
-		const rows = yield* database
-			.select({
-				authTokenId: schema.koboAuthTokens.id,
-				token: schema.koboAuthTokens.token,
-				userId: schema.koboAuthTokens.userId,
-			})
-			.from(schema.koboAuthTokens)
-			.where(
-				and(
-					eq(schema.koboAuthTokens.token, token),
-					isNull(schema.koboAuthTokens.revokedAt),
-				),
-			)
-			.limit(1);
-
-		const authToken = rows[0];
-		if (!authToken) {
-			return yield* Effect.fail(new KoboAuthTokenNotFound({ token }));
-		}
-
-		return authToken satisfies KoboAuthTokenContext;
-	});
-
 export const parseKoboSyncTokenFromHeaders = (headers: Headers) =>
 	parseSyncToken(headers.get(SYNC_TOKEN_HEADER));
 
@@ -730,32 +510,6 @@ export const setSyncTokenHeader = (
 	syncToken: KoboSyncToken,
 ) => {
 	headers.set(SYNC_TOKEN_HEADER, encodeSyncToken(syncToken));
-};
-
-export const buildInitializationResources = ({
-	origin,
-	token,
-	upstreamResources,
-}: {
-	origin: string;
-	token: string;
-	upstreamResources?: Record<string, unknown>;
-}) => {
-	const base = `${origin}/api/kobo/${token}`;
-	return {
-		...(upstreamResources ?? {}),
-		library_sync: `${base}/v1/library/sync`,
-		library_metadata: `${base}/v1/library/{Ids}/metadata`,
-		reading_state: `${base}/v1/library/{Ids}/state`,
-		tags: `${base}/v1/library/tags`,
-		tag_items: `${base}/v1/library/tags/{TagId}/items`,
-		delete_tag_items: `${base}/v1/library/tags/{TagId}/items/delete`,
-		device_auth: `${base}/v1/auth/device`,
-		device_refresh: `${base}/v1/auth/refresh`,
-		image_host: origin,
-		image_url_template: `${base}/{ImageId}/{Width}/{Height}/false/image.jpg`,
-		image_url_quality_template: `${base}/{ImageId}/{Width}/{Height}/{Quality}/{IsGreyscale}/image.jpg`,
-	};
 };
 
 export const buildLocalLibrarySync = ({
@@ -1654,7 +1408,8 @@ export const getDownloadFileForKobo = ({
 					: null,
 		} satisfies KoboDownloadFileResult;
 	});
-export const getOrCreateReadingStateByBookUuid = ({
+
+const getOrCreateReadingStateByBookUuid = ({
 	userId,
 	bookUuid,
 }: {
@@ -2375,16 +2130,6 @@ export const removeItemsFromKoboTag = ({
 		return { success: true as const, tagId, unknownRevisionIds };
 	});
 
-export const buildDummyAuthResponse = (
-	userKey: string | null,
-): KoboAuthResponse => ({
-	AccessToken: toBase64(crypto.getRandomValues(new Uint8Array(24))),
-	RefreshToken: toBase64(crypto.getRandomValues(new Uint8Array(24))),
-	TokenType: "Bearer",
-	TrackingId: crypto.randomUUID(),
-	UserKey: userKey ?? "",
-});
-
 export const setRawStoreSyncTokenFromResponse = ({
 	syncToken,
 	upstreamResponse,
@@ -2416,5 +2161,3 @@ export const copySyncHeadersFromUpstream = ({
 		}
 	}
 };
-
-export const getSyncItemLimit = () => SYNC_ITEM_LIMIT;

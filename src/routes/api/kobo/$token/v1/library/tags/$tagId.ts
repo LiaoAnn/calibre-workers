@@ -6,8 +6,8 @@ import {
 	KoboEncodingFailure,
 	KoboMalformedRequest,
 	parseRenameTagBody,
+	withKoboAuth,
 } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
 import { deleteKoboTag, renameKoboTag } from "#/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/tags/$tagId")(

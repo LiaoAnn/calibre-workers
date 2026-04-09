@@ -7,8 +7,9 @@ import {
 	KoboEncodingFailure,
 	KoboMalformedRequest,
 	koboJsonResponse,
+	resolveKoboLocalOrProxy,
+	withKoboAuth,
 } from "#/lib/kobo.server";
-import { resolveKoboLocalOrProxy, withKoboAuth } from "#/server/koboApi";
 import {
 	getReadingStateResponseByBookUuid,
 	updateReadingStateByBookUuid,

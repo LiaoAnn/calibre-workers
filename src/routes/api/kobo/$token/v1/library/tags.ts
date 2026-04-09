@@ -7,8 +7,8 @@ import {
 	KoboMethodNotAllowed,
 	koboJsonResponse,
 	parseCreateTagBody,
+	withKoboAuth,
 } from "#/lib/kobo.server";
-import { withKoboAuth } from "#/server/koboApi";
 import { createOrUpdateKoboTag } from "#/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/tags")({

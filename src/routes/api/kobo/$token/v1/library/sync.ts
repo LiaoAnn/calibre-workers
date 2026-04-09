@@ -5,8 +5,9 @@ import {
 	encodeKoboLocalSyncResults,
 	KoboEncodingFailure,
 	koboJsonResponse,
+	proxyKoboHandlerOutput,
+	withKoboAuth,
 } from "#/lib/kobo.server";
-import { proxyKoboHandlerOutput, withKoboAuth } from "#/server/koboApi";
 import {
 	buildLocalLibrarySync,
 	copySyncHeadersFromUpstream,

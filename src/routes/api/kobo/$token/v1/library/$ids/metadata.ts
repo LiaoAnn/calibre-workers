@@ -6,8 +6,9 @@ import {
 	KoboEncodingFailure,
 	KoboMalformedRequest,
 	koboJsonResponse,
+	resolveKoboLocalOrProxy,
+	withKoboAuth,
 } from "#/lib/kobo.server";
-import { resolveKoboLocalOrProxy, withKoboAuth } from "#/server/koboApi";
 import { getBookMetadataByUuid } from "#/services/KoboService";
 
 const parseIds = (value: string): string[] =>

@@ -6,8 +6,9 @@ import {
 	encodeKoboEmptyObjectResponse,
 	KoboEncodingFailure,
 	koboJsonResponse,
+	proxyKoboHandlerOutput,
+	withKoboAuth,
 } from "#/lib/kobo.server";
-import { proxyKoboHandlerOutput, withKoboAuth } from "#/server/koboApi";
 
 type RequestLike = Pick<
 	Request,

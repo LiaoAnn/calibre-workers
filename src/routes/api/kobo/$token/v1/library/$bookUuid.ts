@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
-import { KoboBookNotFound } from "#/lib/kobo.server";
-import { resolveKoboLocalOrProxy, withKoboAuth } from "#/server/koboApi";
+import {
+	KoboBookNotFound,
+	resolveKoboLocalOrProxy,
+	withKoboAuth,
+} from "#/lib/kobo.server";
 import { setArchivedBookByUuid } from "#/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/$bookUuid")({

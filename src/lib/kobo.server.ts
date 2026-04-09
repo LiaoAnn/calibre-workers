@@ -1,16 +1,21 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { Data, Either, Schema } from "effect";
+import { and, eq, isNull } from "drizzle-orm";
+import { Data, Effect, Either, Schema } from "effect";
 import type { ConfigError } from "effect/ConfigError";
+import * as schema from "#/db/schema";
+import { AppLayer } from "#/layers/AppLayer";
+import { DatabaseContext } from "#/layers/DatabaseLayer";
+import type { R2Context } from "#/layers/R2Layer";
 
 export const KOBO_TEXT_HEADERS = {
 	"content-type": "text/plain; charset=utf-8",
 };
 
-export class KoboMalformedRouteParams extends Data.TaggedError(
+class KoboMalformedRouteParams extends Data.TaggedError(
 	"KoboMalformedRouteParams",
 )<Record<string, never>> {}
 
-export class KoboUnauthorized extends Data.TaggedError("KoboUnauthorized")<
+class KoboUnauthorized extends Data.TaggedError("KoboUnauthorized")<
 	Record<string, never>
 > {}
 
@@ -64,7 +69,7 @@ interface KoboNormalizedError {
 	readonly code: string;
 }
 
-export type KoboHandledError =
+type KoboHandledError =
 	| KoboMalformedRouteParams
 	| KoboUnauthorized
 	| KoboMalformedRequest
@@ -361,10 +366,8 @@ export type KoboBookMetadata = typeof KoboBookMetadataSchema.Type;
 export type KoboTagPayload = typeof KoboTagPayloadSchema.Type;
 export type KoboReadingStateResponse =
 	typeof KoboReadingStateResponseSchema.Type;
-export type KoboReadingStateUpdateResponse =
-	typeof KoboReadingStateUpdateResponseSchema.Type;
 export type KoboLocalSyncItem = typeof KoboLocalSyncItemSchema.Type;
-export type KoboAuthResponse = typeof KoboAuthResponseSchema.Type;
+type KoboAuthResponse = typeof KoboAuthResponseSchema.Type;
 
 const encodeKoboOutput = <A, I>(
 	schema: Schema.Schema<A, I, never>,
@@ -413,9 +416,6 @@ export const encodeKoboSingleSpaceTextResponse = (value: unknown) =>
 
 export const encodeKoboEmptyTextResponse = (value: unknown) =>
 	encodeKoboOutput(KoboEmptyTextResponseSchema, value);
-
-export const encodeKoboLocalSyncItem = (value: unknown) =>
-	encodeKoboOutput(KoboLocalSyncItemSchema, value);
 
 const trimNonEmpty = (value: string): string | null => {
 	const trimmed = value.trim();
@@ -543,9 +543,7 @@ const KOBO_ERROR_MAP_BY_TAG: Readonly<
 	ConfigError: KOBO_INTERNAL_SERVER_ERROR,
 };
 
-export const koboErrorResponseFromError = (
-	error: KoboHandledError,
-): Response => {
+const koboErrorResponseFromError = (error: KoboHandledError): Response => {
 	const entry = KOBO_ERROR_MAP_BY_TAG[error._tag];
 	if (!entry) {
 		return koboJsonErrorResponse(KOBO_INTERNAL_SERVER_ERROR);
@@ -556,7 +554,7 @@ export const koboErrorResponseFromError = (
 	);
 };
 
-export const koboInternalServerErrorResponse = (): Response =>
+const koboInternalServerErrorResponse = (): Response =>
 	koboJsonErrorResponse(KOBO_INTERNAL_SERVER_ERROR);
 
 export const parseCreateTagBody = (
@@ -878,4 +876,540 @@ export const koboInitializationResourceSnapshot: Record<string, unknown> = {
 	instapaper_link_account_start:
 		"https://authorize.kobo.com/{region}/{language}/linkinstapaper",
 	instapaper_env_url: "https://www.instapaper.com/api/kobo",
+};
+
+const KOBO_STORE_API_URL = "https://storeapi.kobo.com";
+const MAX_LOG_BODY_BYTES = 64 * 1024;
+
+interface BodySerializablePayload {
+	body: ReadableStream | null;
+	headers: Headers;
+	formData(): Promise<FormData>;
+	arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+interface KoboAuthTokenContext {
+	authTokenId: string;
+	token: string;
+	userId: string;
+}
+
+type KoboRequestPayload = Pick<
+	Request,
+	"method" | "url" | "headers" | "clone" | "body" | "formData" | "arrayBuffer"
+>;
+
+type KoboRouteParams = object;
+type KoboTokenRouteParams = {
+	token: string | undefined;
+};
+
+type KoboNormalizedParams<TParams extends KoboRouteParams> = {
+	[K in keyof TParams]-?: Exclude<TParams[K], undefined>;
+};
+
+interface KoboRouteHandlerInput<TParams extends KoboRouteParams> {
+	request: KoboRequestPayload;
+	params: TParams;
+}
+
+type KoboAuthorizedHandlerInput<
+	TInput extends KoboRouteHandlerInput<KoboRouteParams>,
+> = {
+	request: TInput["request"];
+	params: KoboNormalizedParams<TInput["params"]>;
+	koboToken: string;
+	koboAuth: KoboAuthTokenContext;
+};
+
+interface KoboHandlerOutput {
+	response: Response;
+	isHandledInternally: boolean;
+}
+
+type KoboLocalOrProxyResult<A> =
+	| {
+			readonly source: "local";
+			readonly value: A;
+	  }
+	| {
+			readonly source: "proxy";
+			readonly output: KoboHandlerOutput;
+	  };
+
+class KoboAuthTokenNotFound extends Data.TaggedError("KoboAuthTokenNotFound")<{
+	readonly token: string;
+}> {}
+
+const toBase64 = (bytes: Uint8Array) => {
+	let binary = "";
+	const chunkSize = 0x8000;
+	for (let index = 0; index < bytes.length; index += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+	}
+	return btoa(binary);
+};
+
+const parseJsonSafe = (text: string): unknown | undefined => {
+	try {
+		return JSON.parse(text) as unknown;
+	} catch {
+		return undefined;
+	}
+};
+
+const isJsonContentType = (contentType: string): boolean =>
+	contentType.includes("application/json") || contentType.includes("+json");
+
+const isFormContentType = (contentType: string): boolean =>
+	contentType.includes("multipart/form-data") ||
+	contentType.includes("application/x-www-form-urlencoded");
+
+const isTextContentType = (contentType: string): boolean =>
+	contentType.startsWith("text/") ||
+	contentType.includes("application/xml") ||
+	contentType.includes("application/xhtml+xml") ||
+	contentType.includes("application/javascript") ||
+	contentType.includes("application/x-javascript") ||
+	contentType.includes("application/ecmascript") ||
+	contentType.includes("image/svg+xml");
+
+const appendFormValue = (
+	target: Record<string, unknown>,
+	key: string,
+	value: unknown,
+) => {
+	const existing = target[key];
+	if (existing === undefined) {
+		target[key] = value;
+		return;
+	}
+
+	if (Array.isArray(existing)) {
+		existing.push(value);
+		return;
+	}
+
+	target[key] = [existing, value];
+};
+
+const headersToRecord = (headers: Headers): Record<string, string> => {
+	const out: Record<string, string> = {};
+	headers.forEach((value, key) => {
+		out[key] = value;
+	});
+	return out;
+};
+
+const clampBodyBytes = (bytes: Uint8Array) => {
+	if (bytes.byteLength <= MAX_LOG_BODY_BYTES) {
+		return { bytes, truncated: false };
+	}
+
+	return {
+		bytes: bytes.subarray(0, MAX_LOG_BODY_BYTES),
+		truncated: true,
+	};
+};
+
+const normalizeParams = <TParams extends KoboRouteParams>(params: TParams) => {
+	const normalized: Record<string, string> = {};
+	for (const [key, value] of Object.entries(
+		params as Record<string, unknown>,
+	)) {
+		if (typeof value !== "string") {
+			return null;
+		}
+		normalized[key] = value;
+	}
+
+	return normalized as KoboNormalizedParams<TParams>;
+};
+
+const buildStoreUrl = (requestUrl: URL, token: string) => {
+	const prefix = `/api/kobo/${token}`;
+	const relativePath = requestUrl.pathname.startsWith(prefix)
+		? requestUrl.pathname.slice(prefix.length) || "/"
+		: requestUrl.pathname;
+	const normalizedPath = relativePath.startsWith("/")
+		? relativePath
+		: `/${relativePath}`;
+
+	return `${KOBO_STORE_API_URL}${normalizedPath}${requestUrl.search}`;
+};
+
+const serializeBody = async (
+	payload: BodySerializablePayload,
+): Promise<schema.KoboLoggedBody> => {
+	if (!payload.body) {
+		return { type: "empty" };
+	}
+
+	const contentType = (payload.headers.get("content-type") ?? "").toLowerCase();
+
+	if (isFormContentType(contentType)) {
+		const formData = await payload.formData();
+		const form: Record<string, unknown> = {};
+
+		for (const [key, value] of formData.entries()) {
+			if (typeof value === "string") {
+				appendFormValue(form, key, value);
+				continue;
+			}
+
+			const raw = new Uint8Array(await value.arrayBuffer());
+			const { bytes, truncated } = clampBodyBytes(raw);
+			appendFormValue(form, key, {
+				kind: "file",
+				name: value.name,
+				contentType: value.type || "application/octet-stream",
+				size: value.size,
+				encoding: "base64",
+				data: toBase64(bytes),
+				truncated,
+			});
+		}
+
+		return { type: "form", value: form };
+	}
+
+	const raw = new Uint8Array(await payload.arrayBuffer());
+	if (raw.byteLength === 0) {
+		return { type: "empty" };
+	}
+
+	const { bytes, truncated } = clampBodyBytes(raw);
+	const text = new TextDecoder().decode(bytes);
+
+	if (isJsonContentType(contentType) && !truncated) {
+		const parsed = parseJsonSafe(text);
+		if (parsed !== undefined) {
+			return { type: "json", value: parsed };
+		}
+	}
+
+	if (isTextContentType(contentType)) {
+		return {
+			type: "text",
+			contentType: contentType || "text/plain",
+			value: text,
+			truncated,
+		};
+	}
+
+	return {
+		type: "binary",
+		contentType: contentType || "application/octet-stream",
+		encoding: "base64",
+		value: toBase64(bytes),
+		truncated,
+	};
+};
+
+const persistKoboApiLog = ({
+	authTokenId,
+	method,
+	requestUrl,
+	isHandledInternally,
+	requestHeaders,
+	requestBody,
+	response,
+	responseBody,
+}: {
+	authTokenId: string | null;
+	method: string;
+	requestUrl: URL;
+	isHandledInternally: boolean;
+	requestHeaders: Headers;
+	requestBody: schema.KoboLoggedBody;
+	response: Response;
+	responseBody: schema.KoboLoggedBody;
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		yield* database.insert(schema.koboApiLogs).values({
+			id: crypto.randomUUID(),
+			authTokenId,
+			method,
+			path: requestUrl.pathname,
+			query: requestUrl.search || null,
+			isHandledInternally,
+			requestHeaders: headersToRecord(requestHeaders),
+			requestBody,
+			responseStatus: response.status,
+			responseHeaders: headersToRecord(response.headers),
+			responseBody,
+		});
+	});
+
+const resolveKoboAuthToken = (token: string) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const rows = yield* database
+			.select({
+				authTokenId: schema.koboAuthTokens.id,
+				token: schema.koboAuthTokens.token,
+				userId: schema.koboAuthTokens.userId,
+			})
+			.from(schema.koboAuthTokens)
+			.where(
+				and(
+					eq(schema.koboAuthTokens.token, token),
+					isNull(schema.koboAuthTokens.revokedAt),
+				),
+			)
+			.limit(1);
+
+		const authToken = rows[0];
+		if (!authToken) {
+			return yield* Effect.fail(new KoboAuthTokenNotFound({ token }));
+		}
+
+		return authToken satisfies KoboAuthTokenContext;
+	});
+
+const resolveAuthFromToken = async (token: string) => {
+	const authResult = await Effect.runPromise(
+		Effect.either(resolveKoboAuthToken(token).pipe(Effect.provide(AppLayer))),
+	);
+
+	if (Either.isLeft(authResult)) {
+		return null;
+	}
+
+	return authResult.right;
+};
+
+const logKoboApi = async ({
+	request,
+	response,
+	auth,
+	isHandledInternally,
+}: {
+	request: KoboRequestPayload;
+	response: Response;
+	auth: KoboAuthTokenContext | null;
+	isHandledInternally: boolean;
+}) => {
+	try {
+		const [requestBody, responseBody] = await Promise.all([
+			serializeBody(request.clone()),
+			serializeBody(response.clone()),
+		]);
+
+		await Effect.runPromise(
+			persistKoboApiLog({
+				authTokenId: auth?.authTokenId ?? null,
+				method: request.method,
+				requestUrl: new URL(request.url),
+				isHandledInternally,
+				requestHeaders: request.headers,
+				requestBody,
+				response,
+				responseBody,
+			}).pipe(Effect.provide(AppLayer)),
+		);
+	} catch (error) {
+		console.error("Failed to persist Kobo API log", error);
+	}
+};
+
+export const buildInitializationResources = ({
+	origin,
+	token,
+	upstreamResources,
+}: {
+	origin: string;
+	token: string;
+	upstreamResources?: Record<string, unknown>;
+}) => {
+	const base = `${origin}/api/kobo/${token}`;
+	return {
+		...(upstreamResources ?? {}),
+		library_sync: `${base}/v1/library/sync`,
+		library_metadata: `${base}/v1/library/{Ids}/metadata`,
+		reading_state: `${base}/v1/library/{Ids}/state`,
+		tags: `${base}/v1/library/tags`,
+		tag_items: `${base}/v1/library/tags/{TagId}/items`,
+		delete_tag_items: `${base}/v1/library/tags/{TagId}/items/delete`,
+		device_auth: `${base}/v1/auth/device`,
+		device_refresh: `${base}/v1/auth/refresh`,
+		image_host: origin,
+		image_url_template: `${base}/{ImageId}/{Width}/{Height}/false/image.jpg`,
+		image_url_quality_template: `${base}/{ImageId}/{Width}/{Height}/{Quality}/{IsGreyscale}/image.jpg`,
+	};
+};
+
+export const buildDummyAuthResponse = (
+	userKey: string | null,
+): KoboAuthResponse => ({
+	AccessToken: toBase64(crypto.getRandomValues(new Uint8Array(24))),
+	RefreshToken: toBase64(crypto.getRandomValues(new Uint8Array(24))),
+	TokenType: "Bearer",
+	TrackingId: crypto.randomUUID(),
+	UserKey: userKey ?? "",
+});
+
+const toKoboProxyHandlerOutput = (response: Response): KoboHandlerOutput => ({
+	response,
+	isHandledInternally: false,
+});
+
+export const proxyKoboHandlerOutput = ({
+	request,
+	token,
+	rawStoreToken,
+}: {
+	request: KoboRequestPayload;
+	token: string;
+	rawStoreToken?: string;
+}) =>
+	Effect.tryPromise({
+		try: async () => {
+			const proxySource = request.clone();
+			const proxyUrl = buildStoreUrl(new URL(proxySource.url), token);
+			const outgoingHeaders = new Headers(proxySource.headers);
+			outgoingHeaders.delete("host");
+			if (rawStoreToken) {
+				outgoingHeaders.set("x-kobo-synctoken", rawStoreToken);
+			}
+
+			const proxyRequest = new Request(proxyUrl, {
+				method: proxySource.method,
+				headers: outgoingHeaders,
+				body:
+					proxySource.method === "GET" || proxySource.method === "HEAD"
+						? null
+						: proxySource.body,
+				redirect: "manual",
+			});
+
+			const response = await fetch(proxyRequest);
+			return toKoboProxyHandlerOutput(response);
+		},
+		catch: (cause) =>
+			new Error(
+				`Kobo proxy failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+			),
+	});
+
+export const resolveKoboLocalOrProxy = <A, E extends KoboHandledError>({
+	local,
+	request,
+	token,
+	rawStoreToken,
+	onLocalFailure,
+}: {
+	local: Effect.Effect<A, E, DatabaseContext | R2Context>;
+	request: KoboRequestPayload;
+	token: string;
+	rawStoreToken?: string;
+	onLocalFailure: (error: E) => KoboHandledError;
+}): Effect.Effect<
+	KoboLocalOrProxyResult<A>,
+	KoboHandledError,
+	DatabaseContext | R2Context
+> =>
+	Effect.gen(function* () {
+		const localResult = yield* Effect.either(local);
+		if (Either.isRight(localResult)) {
+			return {
+				source: "local",
+				value: localResult.right,
+			} as const;
+		}
+
+		const proxied = yield* Effect.either(
+			proxyKoboHandlerOutput({
+				request,
+				token,
+				rawStoreToken,
+			}),
+		);
+		if (Either.isRight(proxied)) {
+			return {
+				source: "proxy",
+				output: proxied.right,
+			} as const;
+		}
+
+		return yield* Effect.fail(onLocalFailure(localResult.left));
+	});
+
+export const withKoboAuth = async <
+	TInput extends KoboRouteHandlerInput<KoboRouteParams & KoboTokenRouteParams>,
+>(
+	input: TInput,
+	handler: (
+		authorizedInput: KoboAuthorizedHandlerInput<TInput>,
+	) => Effect.Effect<
+		KoboHandlerOutput,
+		KoboHandledError,
+		DatabaseContext | R2Context
+	>,
+): Promise<Response> => {
+	const normalizedParams = normalizeParams<TInput["params"]>(input.params);
+	if (!normalizedParams) {
+		const response = koboErrorResponseFromError(
+			new KoboMalformedRouteParams({}),
+		);
+		await logKoboApi({
+			request: input.request,
+			response,
+			auth: null,
+			isHandledInternally: true,
+		});
+		return response;
+	}
+
+	const token = normalizedParams.token;
+	const auth = token ? await resolveAuthFromToken(token) : null;
+
+	if (!token || !auth) {
+		const response = koboErrorResponseFromError(new KoboUnauthorized({}));
+		await logKoboApi({
+			request: input.request,
+			response,
+			auth: null,
+			isHandledInternally: true,
+		});
+		return response;
+	}
+
+	try {
+		const handledEffect = handler({
+			request: input.request,
+			params: normalizedParams,
+			koboToken: token,
+			koboAuth: auth,
+		}).pipe(
+			Effect.provide(AppLayer),
+			Effect.match({
+				onFailure: (error) => ({
+					response: koboErrorResponseFromError(error),
+					isHandledInternally: true,
+				}),
+				onSuccess: (output) => output,
+			}),
+		);
+
+		const output = await Effect.runPromise(handledEffect);
+		await logKoboApi({
+			request: input.request,
+			response: output.response,
+			auth,
+			isHandledInternally: output.isHandledInternally,
+		});
+		return output.response;
+	} catch (error) {
+		console.error("Unhandled Kobo API handler error", error);
+		const response = koboInternalServerErrorResponse();
+		await logKoboApi({
+			request: input.request,
+			response,
+			auth,
+			isHandledInternally: true,
+		});
+		return response;
+	}
 };
