@@ -19,9 +19,8 @@ import (
 )
 
 const (
-	maxUploadSize      int64         = 256 << 20 // 256MB
-	multipartMemoryMax int64         = 32 << 20  // 32MB kept in memory; rest spills to disk
-	requestTimeout     time.Duration = 8 * time.Minute
+	maxUploadSize  int64         = 256 << 20 // 256MB
+	requestTimeout time.Duration = 8 * time.Minute
 
 	formFieldFile       = "file"
 	formFieldFormatFrom = "format_from"
@@ -85,7 +84,7 @@ func main() {
 		Addr:              "0.0.0.0:8080",
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       2 * time.Minute,
+		ReadTimeout:       5 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 		WriteTimeout:      0,
 		MaxHeaderBytes:    1 << 20,
@@ -223,125 +222,157 @@ func parseRequestPayload(r *http.Request) (requestPayload, error) {
 		}
 	}
 
-	if err := r.ParseMultipartForm(multipartMemoryMax); err != nil {
-		return requestPayload{}, fmt.Errorf("parse form: %w", err)
-	}
-
-	if r.MultipartForm != nil {
-		cleanupFns = append(cleanupFns, func() {
-			if err := r.MultipartForm.RemoveAll(); err != nil {
-				log.Printf("cleanup multipart temp files failed: %v", err)
-			}
-		})
-	}
-
-	formatFrom := normalizeFormat(r.FormValue(formFieldFormatFrom))
-	formatTo := normalizeFormat(r.FormValue(formFieldFormatTo))
-
-	file, header, err := r.FormFile(formFieldFile)
+	// Stream multipart parts directly to temp files instead of buffering via
+	// ParseMultipartForm. This avoids holding ~32 MB in heap and eliminates the
+	// intermediate multipart temp file (~235 MB saved on disk for large uploads).
+	mr, err := r.MultipartReader()
 	if err != nil {
-		cleanup()
-		return requestPayload{}, fmt.Errorf("read file: %w", err)
-	}
-	defer file.Close()
-
-	tempPattern := "upload-*"
-	if isSupportedFormat(formatFrom) {
-		tempPattern = fmt.Sprintf("upload-*.%s", formatFrom)
+		return requestPayload{}, fmt.Errorf("create multipart reader: %w", err)
 	}
 
-	inputFile, err := os.CreateTemp("", tempPattern)
-	if err != nil {
-		cleanup()
-		return requestPayload{}, fmt.Errorf("create temp input: %w", err)
-	}
-	cleanupFns = append(cleanupFns, func() {
-		if err := os.Remove(inputFile.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Printf("cleanup input temp file failed: %v", err)
+	var payload requestPayload
+
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
 		}
-	})
-
-	if _, err := io.Copy(inputFile, file); err != nil {
-		_ = inputFile.Close()
-		cleanup()
-		return requestPayload{}, fmt.Errorf("write temp input: %w", err)
-	}
-
-	if err := inputFile.Close(); err != nil {
-		cleanup()
-		return requestPayload{}, fmt.Errorf("close temp input: %w", err)
-	}
-
-	payload := requestPayload{
-		formatFrom: formatFrom,
-		formatTo:   formatTo,
-		inputPath:  inputFile.Name(),
-		cleanup:    cleanup,
-	}
-
-	if header != nil && header.Size > maxUploadSize {
-		cleanup()
-		return requestPayload{}, fmt.Errorf("uploaded file exceeds maximum size")
-	}
-
-	if rawMetadata := r.FormValue(formFieldMetadata); rawMetadata != "" {
-		if err := json.Unmarshal([]byte(rawMetadata), &payload.metadata); err != nil {
-			cleanup()
-			return requestPayload{}, fmt.Errorf("invalid metadata payload: %w", err)
-		}
-	}
-
-	coverFile, coverHeader, err := r.FormFile(formFieldCover)
-	if err != nil {
-		if !errors.Is(err, http.ErrMissingFile) {
-			cleanup()
-			return requestPayload{}, fmt.Errorf("read cover file: %w", err)
-		}
-	} else {
-		defer coverFile.Close()
-
-		coverPattern := "cover-*"
-		if coverHeader != nil {
-			if coverHeader.Size > maxUploadSize {
-				cleanup()
-				return requestPayload{}, fmt.Errorf("uploaded cover file exceeds maximum size")
-			}
-
-			ext := strings.TrimSpace(strings.ToLower(filepath.Ext(coverHeader.Filename)))
-			if ext == "" {
-				ext = coverExtForContentType(coverHeader.Header.Get("Content-Type"))
-			}
-			if ext != "" {
-				coverPattern = fmt.Sprintf("cover-*%s", ext)
-			}
-		}
-
-		coverTempFile, err := os.CreateTemp("", coverPattern)
 		if err != nil {
 			cleanup()
-			return requestPayload{}, fmt.Errorf("create temp cover: %w", err)
+			return requestPayload{}, fmt.Errorf("read multipart part: %w", err)
 		}
 
-		cleanupFns = append(cleanupFns, func() {
-			if err := os.Remove(coverTempFile.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
-				log.Printf("cleanup cover temp file failed: %v", err)
+		switch part.FormName() {
+		case formFieldFile:
+			inputFile, err := os.CreateTemp("", "upload-*")
+			if err != nil {
+				_ = part.Close()
+				cleanup()
+				return requestPayload{}, fmt.Errorf("create temp input: %w", err)
 			}
-		})
+			cleanupFns = append(cleanupFns, func() {
+				if err := os.Remove(inputFile.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
+					log.Printf("cleanup input temp file failed: %v", err)
+				}
+			})
 
-		if _, err := io.Copy(coverTempFile, coverFile); err != nil {
-			_ = coverTempFile.Close()
-			cleanup()
-			return requestPayload{}, fmt.Errorf("write temp cover: %w", err)
+			n, err := io.Copy(inputFile, part)
+			_ = part.Close()
+			if err != nil {
+				_ = inputFile.Close()
+				cleanup()
+				return requestPayload{}, fmt.Errorf("write temp input: %w", err)
+			}
+			if err := inputFile.Close(); err != nil {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("close temp input: %w", err)
+			}
+			if n > maxUploadSize {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("uploaded file exceeds maximum size")
+			}
+			payload.inputPath = inputFile.Name()
+
+		case formFieldCover:
+			coverPattern := "cover-*"
+			if fn := part.FileName(); fn != "" {
+				ext := strings.TrimSpace(strings.ToLower(filepath.Ext(fn)))
+				if ext == "" {
+					ext = coverExtForContentType(part.Header.Get("Content-Type"))
+				}
+				if ext != "" {
+					coverPattern = fmt.Sprintf("cover-*%s", ext)
+				}
+			}
+
+			coverFile, err := os.CreateTemp("", coverPattern)
+			if err != nil {
+				_ = part.Close()
+				cleanup()
+				return requestPayload{}, fmt.Errorf("create temp cover: %w", err)
+			}
+			cleanupFns = append(cleanupFns, func() {
+				if err := os.Remove(coverFile.Name()); err != nil && !errors.Is(err, os.ErrNotExist) {
+					log.Printf("cleanup cover temp file failed: %v", err)
+				}
+			})
+
+			n, err := io.Copy(coverFile, part)
+			_ = part.Close()
+			if err != nil {
+				_ = coverFile.Close()
+				cleanup()
+				return requestPayload{}, fmt.Errorf("write temp cover: %w", err)
+			}
+			if err := coverFile.Close(); err != nil {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("close temp cover: %w", err)
+			}
+			if n > maxUploadSize {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("uploaded cover exceeds maximum size")
+			}
+			payload.coverPath = coverFile.Name()
+
+		case formFieldFormatFrom:
+			data, err := io.ReadAll(io.LimitReader(part, 64))
+			_ = part.Close()
+			if err != nil {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("read format_from: %w", err)
+			}
+			payload.formatFrom = string(data)
+
+		case formFieldFormatTo:
+			data, err := io.ReadAll(io.LimitReader(part, 64))
+			_ = part.Close()
+			if err != nil {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("read format_to: %w", err)
+			}
+			payload.formatTo = string(data)
+
+		case formFieldMetadata:
+			data, err := io.ReadAll(io.LimitReader(part, 1<<20))
+			_ = part.Close()
+			if err != nil {
+				cleanup()
+				return requestPayload{}, fmt.Errorf("read metadata: %w", err)
+			}
+			if len(data) > 0 {
+				if err := json.Unmarshal(data, &payload.metadata); err != nil {
+					cleanup()
+					return requestPayload{}, fmt.Errorf("invalid metadata payload: %w", err)
+				}
+			}
+
+		default:
+			_, _ = io.Copy(io.Discard, part)
+			_ = part.Close()
 		}
-
-		if err := coverTempFile.Close(); err != nil {
-			cleanup()
-			return requestPayload{}, fmt.Errorf("close temp cover: %w", err)
-		}
-
-		payload.coverPath = coverTempFile.Name()
 	}
 
+	if payload.inputPath == "" {
+		cleanup()
+		return requestPayload{}, fmt.Errorf("file field is required")
+	}
+
+	// Rename the temp file with the correct extension so calibre tools
+	// (ebook-convert / ebook-meta / ebook-polish) can recognise the format.
+	normalizedFrom := normalizeFormat(payload.formatFrom)
+	if isSupportedFormat(normalizedFrom) {
+		newPath := payload.inputPath + "." + normalizedFrom
+		if err := os.Rename(payload.inputPath, newPath); err == nil {
+			payload.inputPath = newPath
+			cleanupFns = append(cleanupFns, func() {
+				if err := os.Remove(newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+					log.Printf("cleanup renamed input file failed: %v", err)
+				}
+			})
+		}
+	}
+
+	payload.cleanup = cleanup
 	return payload, nil
 }
 
@@ -425,9 +456,10 @@ func applyMetadataWithCalibre(
 
 	if len(args) > 1 {
 		cmd := exec.CommandContext(ctx, "ebook-meta", args...)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("ebook-meta failed: input=%s err=%v output=%s", inputPath, err, string(output))
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Printf("ebook-meta failed: input=%s err=%v", inputPath, err)
 			return err
 		}
 	}
@@ -456,9 +488,10 @@ func applyCoverWithPolish(ctx context.Context, inputPath string, coverPath strin
 	}()
 
 	cmd := exec.CommandContext(ctx, "ebook-polish", "--cover", coverPath, inputPath, outputPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("ebook-polish failed: input=%s cover=%s err=%v output=%s", inputPath, coverPath, err, string(output))
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Printf("ebook-polish failed: input=%s cover=%s err=%v", inputPath, coverPath, err)
 		return err
 	}
 
@@ -547,9 +580,10 @@ func convertWithCalibre(ctx context.Context, w http.ResponseWriter, inputPath st
 	}()
 
 	cmd := exec.CommandContext(ctx, "ebook-convert", inputPath, outputFile)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("ebook-convert failed: input=%s target=%s err=%v output=%s", inputPath, formatTo, err, string(output))
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Printf("ebook-convert failed: input=%s target=%s err=%v", inputPath, formatTo, err)
 		return err
 	}
 
