@@ -14,12 +14,12 @@ import {
 } from "#/components/ui/dropdown-menu";
 import { useUploadQueue } from "#/hooks/useUploadQueue";
 import { authClient, useSession } from "#/lib/auth-client";
+import {
+	BOOK_MAX_UPLOAD_SIZE_BYTES,
+	validateBookUploadFile,
+} from "#/lib/book-upload-validation";
 import { TaskNotification } from "./TaskNotification";
 import ThemeToggle from "./ThemeToggle";
-
-const isSupportedUploadFile = (file: File) =>
-	file.name.toLowerCase().endsWith(".epub") ||
-	file.type.toLowerCase().includes("epub");
 
 export default function Header() {
 	const { data: session } = useSession();
@@ -38,15 +38,45 @@ export default function Header() {
 		if (!files || files.length === 0) return;
 
 		const fileArray = Array.from(files);
-		const validFiles = fileArray.filter(isSupportedUploadFile);
-		const invalidFiles = fileArray.filter(
-			(file) => !isSupportedUploadFile(file),
-		);
+		const validFiles: File[] = [];
+		let unsupportedCount = 0;
+		let tooLargeCount = 0;
+		let emptyCount = 0;
 
-		if (invalidFiles.length > 0) {
+		for (const file of fileArray) {
+			const validationIssue = validateBookUploadFile(file);
+			if (!validationIssue) {
+				validFiles.push(file);
+				continue;
+			}
+
+			switch (validationIssue) {
+				case "unsupported-type":
+					unsupportedCount += 1;
+					break;
+				case "too-large":
+					tooLargeCount += 1;
+					break;
+				case "empty-file":
+					emptyCount += 1;
+					break;
+			}
+		}
+
+		if (unsupportedCount > 0) {
 			toast.error(
-				`僅支援 EPUB 檔案，已忽略 ${invalidFiles.length} 個不符合格式的檔案。`,
+				`僅支援 EPUB 檔案，已忽略 ${unsupportedCount} 個不符合格式的檔案。`,
 			);
+		}
+
+		if (tooLargeCount > 0) {
+			toast.error(
+				`已忽略 ${tooLargeCount} 個超過 ${Math.floor(BOOK_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))}MB 的檔案。`,
+			);
+		}
+
+		if (emptyCount > 0) {
+			toast.error(`已忽略 ${emptyCount} 個空檔案。`);
 		}
 
 		if (validFiles.length > 0) {

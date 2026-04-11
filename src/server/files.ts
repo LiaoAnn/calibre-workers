@@ -5,6 +5,10 @@ import * as schema from "#/db/schema";
 import { AppLayer } from "#/layers/AppLayer";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 import {
+	BOOK_MAX_UPLOAD_SIZE_BYTES,
+	validateBookUploadFile,
+} from "#/lib/book-upload-validation";
+import {
 	COVER_MAX_UPLOAD_SIZE_BYTES,
 	type CoverValidationIssue,
 	validateCoverFile,
@@ -28,16 +32,8 @@ class UploadError extends Data.TaggedError("UploadError")<{
 	readonly cause?: unknown;
 }> {}
 
-const isSupportedUploadInfo = (input: {
-	fileName: string;
-	mimeType?: string;
-}) =>
-	input.fileName.toLowerCase().endsWith(".epub") ||
-	(input.mimeType ?? "").toLowerCase().includes("epub");
-
 const R2_MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
 const R2_MULTIPART_MAX_PARTS = 10_000;
-const R2_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024;
 
 const resolveTitle = (title: string | undefined, fileName: string) => {
 	const trimmed = title?.trim();
@@ -158,16 +154,24 @@ export const createBookUploadSessionServerFn = createServerFn({
 			throw new UploadError({ message: "Invalid file size" });
 		}
 
-		if (data.fileSize > R2_MAX_UPLOAD_SIZE_BYTES) {
-			throw new UploadError({
-				message: "File too large. Maximum supported size is 5GB.",
-			});
-		}
-
-		if (!isSupportedUploadInfo({ fileName, mimeType: data.mimeType })) {
-			throw new UploadError({
-				message: "Unsupported file format. Only .epub is allowed.",
-			});
+		const validationIssue = validateBookUploadFile({
+			name: fileName,
+			type: data.mimeType,
+			size: data.fileSize,
+		});
+		if (validationIssue) {
+			switch (validationIssue) {
+				case "unsupported-type":
+					throw new UploadError({
+						message: "Unsupported file format. Only .epub is allowed.",
+					});
+				case "empty-file":
+					throw new UploadError({ message: "Invalid file size" });
+				case "too-large":
+					throw new UploadError({
+						message: `File too large. Maximum supported size is ${Math.floor(BOOK_MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))}MB.`,
+					});
+			}
 		}
 
 		const totalParts = Math.ceil(data.fileSize / R2_MULTIPART_PART_SIZE_BYTES);
