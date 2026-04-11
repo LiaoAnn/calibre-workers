@@ -9,7 +9,7 @@
   "dev": {
     "ip": "127.0.0.1",
     "port": 8787,
-    "inspector_port": 9229
+    "inspector_port": 9229,
   },
   "observability": {
     "enabled": true,
@@ -85,6 +85,7 @@
     {
       "class_name": "ConverterContainer",
       "image": "./src/containers/converter/Dockerfile",
+      "instance_type": "basic",
       "max_instances": 5
     }
   ],
@@ -153,6 +154,7 @@
         {
           "class_name": "ConverterContainer",
           "image": "./src/containers/converter/Dockerfile",
+          "instance_type": "basic",
           "max_instances": 5
         }
       ],
