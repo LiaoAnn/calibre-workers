@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pgaskin/kepubify/v4/kepub"
@@ -21,6 +22,15 @@ import (
 const (
 	maxUploadSize  int64         = 256 << 20 // 256MB
 	requestTimeout time.Duration = 8 * time.Minute
+
+	// copyBufSize is the buffer size for pooled io operations.
+	// 256 KB balances syscall overhead vs memory use for large file streaming.
+	copyBufSize = 256 << 10
+
+	// maxConcurrentJobs limits heavy operations (calibre/kepubify) that run
+	// concurrently. With 1/4 vCPU on the basic tier, parallel calibre
+	// processes just compete for the same core and increase peak memory.
+	maxConcurrentJobs = 2
 
 	formFieldFile       = "file"
 	formFieldFormatFrom = "format_from"
@@ -33,6 +43,19 @@ const (
 	formatAZW3  = "azw3"
 	formatMOBI  = "mobi"
 )
+
+// bufPool reuses byte slices for io.CopyBuffer, avoiding a fresh 32 KB
+// allocation on every call (the default inside io.Copy).
+var bufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, copyBufSize)
+		return &b
+	},
+}
+
+// jobSem limits concurrent heavy operations. Requests beyond the limit block
+// until a slot opens or their context expires.
+var jobSem = make(chan struct{}, maxConcurrentJobs)
 
 var supportedFormats = map[string]struct{}{
 	formatEPUB:  {},
@@ -129,18 +152,24 @@ func handleProcess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if shouldApplyMetadata(payload.metadata, payload.coverPath) {
-		if err := applyMetadataWithCalibre(
+		if err := acquireJobSlot(ctx); err != nil {
+			writeError(w, http.StatusGatewayTimeout, "timed out waiting for a free processing slot", err)
+			return
+		}
+		metaErr := applyMetadataWithCalibre(
 			ctx,
 			payload.inputPath,
 			payload.formatFrom,
 			payload.metadata,
 			payload.coverPath,
-		); err != nil {
-			if isContextTimeout(err) {
-				writeError(w, http.StatusGatewayTimeout, "metadata processing timed out", err)
+		)
+		releaseJobSlot()
+		if metaErr != nil {
+			if isContextTimeout(metaErr) {
+				writeError(w, http.StatusGatewayTimeout, "metadata processing timed out", metaErr)
 				return
 			}
-			writeError(w, http.StatusUnprocessableEntity, "metadata processing failed", err)
+			writeError(w, http.StatusUnprocessableEntity, "metadata processing failed", metaErr)
 			return
 		}
 	}
@@ -189,20 +218,32 @@ func handleConvert(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("kepub conversion requires epub source, got %q", formatFrom), nil)
 			return
 		}
-		if err := convertToKepub(ctx, w, payload.inputPath); err != nil {
-			if isContextTimeout(err) {
-				writeErrorIfPossible(w, http.StatusGatewayTimeout, "conversion timed out", err)
+		if err := acquireJobSlot(ctx); err != nil {
+			writeError(w, http.StatusGatewayTimeout, "timed out waiting for a free conversion slot", err)
+			return
+		}
+		convErr := convertToKepub(ctx, w, payload.inputPath)
+		releaseJobSlot()
+		if convErr != nil {
+			if isContextTimeout(convErr) {
+				writeErrorIfPossible(w, http.StatusGatewayTimeout, "conversion timed out", convErr)
 				return
 			}
-			writeErrorIfPossible(w, http.StatusInternalServerError, "kepub conversion failed", err)
+			writeErrorIfPossible(w, http.StatusInternalServerError, "kepub conversion failed", convErr)
 		}
 	case formatAZW3, formatMOBI:
-		if err := convertWithCalibre(ctx, w, payload.inputPath, formatFrom, formatTo); err != nil {
-			if isContextTimeout(err) {
-				writeErrorIfPossible(w, http.StatusGatewayTimeout, "conversion timed out", err)
+		if err := acquireJobSlot(ctx); err != nil {
+			writeError(w, http.StatusGatewayTimeout, "timed out waiting for a free conversion slot", err)
+			return
+		}
+		convErr := convertWithCalibre(ctx, w, payload.inputPath, formatFrom, formatTo)
+		releaseJobSlot()
+		if convErr != nil {
+			if isContextTimeout(convErr) {
+				writeErrorIfPossible(w, http.StatusGatewayTimeout, "conversion timed out", convErr)
 				return
 			}
-			writeErrorIfPossible(w, http.StatusUnprocessableEntity, "ebook conversion failed", err)
+			writeErrorIfPossible(w, http.StatusUnprocessableEntity, "ebook conversion failed", convErr)
 		}
 
 	// Future formats via ebook-convert (requires Calibre in Dockerfile):
@@ -256,7 +297,7 @@ func parseRequestPayload(r *http.Request) (requestPayload, error) {
 				}
 			})
 
-			n, err := io.Copy(inputFile, part)
+			n, err := copyPooled(inputFile, part)
 			_ = part.Close()
 			if err != nil {
 				_ = inputFile.Close()
@@ -297,7 +338,7 @@ func parseRequestPayload(r *http.Request) (requestPayload, error) {
 				}
 			})
 
-			n, err := io.Copy(coverFile, part)
+			n, err := copyPooled(coverFile, part)
 			_ = part.Close()
 			if err != nil {
 				_ = coverFile.Close()
@@ -518,7 +559,7 @@ func writeFileResponseFromPath(ctx context.Context, w http.ResponseWriter, forma
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, newContextReader(ctx, file)); err != nil {
+	if _, err := copyPooled(w, newContextReader(ctx, file)); err != nil {
 		return &responseWriteError{
 			cause:           fmt.Errorf("stream file response: %w", err),
 			responseStarted: true,
@@ -656,4 +697,26 @@ func (c *contextReader) Read(p []byte) (int, error) {
 	default:
 		return c.r.Read(p)
 	}
+}
+
+// copyPooled uses a sync.Pool-backed buffer with io.CopyBuffer, avoiding a
+// fresh allocation on every call.
+func copyPooled(dst io.Writer, src io.Reader) (int64, error) {
+	bp := bufPool.Get().(*[]byte)
+	n, err := io.CopyBuffer(dst, src, *bp)
+	bufPool.Put(bp)
+	return n, err
+}
+
+func acquireJobSlot(ctx context.Context) error {
+	select {
+	case jobSem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func releaseJobSlot() {
+	<-jobSem
 }

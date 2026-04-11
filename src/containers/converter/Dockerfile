@@ -30,6 +30,14 @@ RUN apt-get update \
 
 ENV QT_QPA_PLATFORM=offscreen
 
+# Go GC tuning for the "basic" container tier (1 GiB RAM, 1/4 vCPU).
+# GOMEMLIMIT: soft cap at ~900 MiB, leaving ~10% headroom for OS + calibre.
+# GOGC: trigger GC sooner to keep resident memory low; GOMEMLIMIT is the safety net.
+# GOMAXPROCS: match the 1/4 vCPU slice to avoid scheduler overhead.
+ENV GOMEMLIMIT=900MiB \
+    GOGC=50 \
+    GOMAXPROCS=1
+
 COPY --from=builder /app/converter /usr/local/bin/converter
 
 EXPOSE 8080
