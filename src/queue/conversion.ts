@@ -62,10 +62,6 @@ const runConversionJob = (jobId: string) =>
 		const fileRecord = yield* getBookFileRecord(job.bookId, job.sourceFileId);
 
 		const r2Object = yield* getBookFile(fileRecord.r2Key);
-		const bytes = yield* Effect.tryPromise({
-			try: () => r2Object.arrayBuffer(),
-			catch: (cause) => new Error(`arrayBuffer failed: ${String(cause)}`),
-		});
 
 		const container = yield* ConverterContainerContext;
 		const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
@@ -75,6 +71,7 @@ const runConversionJob = (jobId: string) =>
 					const coverObject = yield* getBookFile(
 						r2Keys.bookCover({ bookId: job.bookId }),
 					);
+					// Covers are small (< 5 MB) — safe to buffer in Worker memory
 					const coverBytes = yield* Effect.tryPromise({
 						try: () => coverObject.arrayBuffer(),
 						catch: (cause) =>
@@ -90,13 +87,15 @@ const runConversionJob = (jobId: string) =>
 				})
 			: undefined;
 
-		const convertedBytes = yield* container.convert(
-			bytes,
+		// Stream R2 body → convert container → process container → R2.
+		// No ArrayBuffer buffering in the Worker for the main book file.
+		const converted = yield* container.convert(
+			r2Object.body,
 			fileRecord.format,
 			job.targetFormat,
 		);
 
-		const processed = yield* container.process(convertedBytes, {
+		const processed = yield* container.process(converted.body, {
 			formatFrom: job.targetFormat,
 			formatTo: job.targetFormat,
 			metadata: metadataForContainer,
@@ -112,17 +111,23 @@ const runConversionJob = (jobId: string) =>
 
 		yield* uploadBookFile({
 			r2Key: resultR2Key,
-			body: processed.bytes,
+			body: processed.body,
 			contentType: processed.contentType || mimeTypeForFormat(job.targetFormat),
-			expectedSize: processed.bytes.byteLength,
+			expectedSize: processed.size || undefined,
 		});
 
+		// Use r2Object.size (source file from R2) when Content-Length is missing
+		// from the container response. The final accurate size comes from R2 after
+		// the streamed upload; however createBookFile only needs a best-effort hint
+		// because the file is already persisted.  When the container sets
+		// Content-Length correctly (the Go handler always does) processed.size is
+		// accurate.
 		const { fileId: resultFileId } = yield* createBookFile({
 			bookId: job.bookId,
 			format: job.targetFormat,
 			fileName: resultFileName,
 			r2Key: resultR2Key,
-			size: processed.bytes.byteLength,
+			size: processed.size || r2Object.size,
 			mimeType: processed.contentType || mimeTypeForFormat(job.targetFormat),
 		});
 

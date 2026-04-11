@@ -88,6 +88,8 @@ export const uploadBookFile = ({
 				}),
 			);
 		}
+
+		return { size: uploaded.size };
 	});
 
 export const deleteBookFile = (r2Key: string) =>

@@ -72,16 +72,10 @@ const runMetadataSyncForFile = ({
 
 		const source = yield* getBookFile(r2Key);
 
-		const bytes = yield* Effect.tryPromise({
-			try: () => source.arrayBuffer(),
-			catch: (cause) =>
-				new Error(
-					`arrayBuffer failed for metadata sync ${fileId}: ${String(cause)}`,
-				),
-		});
-
+		// Stream R2 body → process container → R2.
+		// No ArrayBuffer buffering in the Worker for the main book file.
 		const container = yield* ConverterContainerContext;
-		const processed = yield* container.process(bytes, {
+		const processed = yield* container.process(source.body, {
 			formatFrom: format,
 			formatTo: format,
 			metadata: metadataForContainer,
@@ -90,9 +84,9 @@ const runMetadataSyncForFile = ({
 
 		yield* uploadBookFile({
 			r2Key,
-			body: processed.bytes,
+			body: processed.body,
 			contentType: processed.contentType || mimeTypeForFormat(format),
-			expectedSize: processed.bytes.byteLength,
+			expectedSize: processed.size || undefined,
 		});
 
 		yield* setBookFileMetadataStatus({
