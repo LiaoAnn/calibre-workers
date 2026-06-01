@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:converter": "cd src/containers/converter && go test ./...",
     "test:converter:integration": "cd src/containers/converter && go test -v -count=1 -tags=integration ./...",
+    "typecheck": "tsc",
     "knip": "knip",
     "format": "biome format",
     "lint": "biome lint",
