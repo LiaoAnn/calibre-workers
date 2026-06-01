@@ -1,0 +1,27 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"entry": [
+		"src/router.tsx",
+		"src/routes/**/*.{ts,tsx}"
+	],
+	"project": [
+		"**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}",
+		"!src/routeTree.gen.ts",
+		"!worker-configuration.d.ts"
+	],
+	"ignoreDependencies": [
+		"cloudflare",
+		"tailwindcss",
+		"tw-animate-css",
+		"@tailwindcss/typography"
+	],
+	"ignoreBinaries": [
+		"go"
+	],
+	"ignoreIssues": {
+		"src/components/ui/**/*.{ts,tsx}": [
+			"exports",
+			"types"
+		]
+	}
+}
