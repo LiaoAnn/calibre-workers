@@ -12,7 +12,7 @@ export const conversionQueryKeys = {
 	tasks: (limit = 10) => [...conversionQueryKeys.all, { limit }] as const,
 } as const;
 
-export const conversionMutationKeys = {
+const conversionMutationKeys = {
 	trigger: ["mutation", "convert-book"] as const,
 } as const;
 

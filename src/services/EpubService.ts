@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { Data, Effect } from "effect";
-import { inflateSync, strFromU8, unzipSync } from "fflate";
+import { inflateSync, strFromU8 } from "fflate";
 import { getBookFileRange } from "#/services/FileService";
 
 class ParseError extends Data.TaggedError("ParseError")<{
@@ -20,11 +20,6 @@ interface EpubMetadata {
 	series?: string;
 	seriesIndex?: number;
 	identifiers?: { type: string; value: string }[];
-}
-
-interface EpubCover {
-	data: Uint8Array;
-	mimeType: string;
 }
 
 const XML_ENTITY_MAP: Record<string, string> = {
@@ -49,14 +44,6 @@ function decodeXmlEntities(value: string): string {
 
 		return XML_ENTITY_MAP[entity] ?? _;
 	});
-}
-
-function readZipText(
-	entries: Record<string, Uint8Array>,
-	path: string,
-): string | undefined {
-	const data = entries[path] ?? entries[path.replace(/^\.\//, "")];
-	return data ? strFromU8(data) : undefined;
 }
 
 function extractTagContent(xml: string, tag: string): string | undefined {
@@ -125,20 +112,6 @@ function extractIdentifiers(xml: string): { type: string; value: string }[] {
 		}
 	}
 	return results;
-}
-
-function findOpfPath(entries: Record<string, Uint8Array>): string | undefined {
-	const containerXml = readZipText(entries, "META-INF/container.xml");
-	if (containerXml) {
-		const match = /full-path\s*=\s*["']([^"']+)["']/i.exec(containerXml);
-		if (match?.[1] && entries[match[1]]) {
-			return match[1];
-		}
-	}
-
-	return Object.keys(entries).find((path) =>
-		path.toLowerCase().endsWith(".opf"),
-	);
 }
 
 interface ZipCentralDirectoryEntry {
@@ -735,29 +708,6 @@ export const parseEpubMetadataAndCoverFromR2 = ({ r2Key }: { r2Key: string }) =>
 		};
 	});
 
-export const parseEpubMetadata = (buffer: ArrayBuffer) =>
-	Effect.try({
-		try: () => {
-			const entries = unzipSync(new Uint8Array(buffer));
-			const opfPath = findOpfPath(entries);
-			if (!opfPath) {
-				throw new Error("Invalid EPUB: missing package document (.opf)");
-			}
-
-			const opfXml = readZipText(entries, opfPath);
-			if (!opfXml) {
-				throw new Error("Invalid EPUB: unreadable package document (.opf)");
-			}
-
-			return parseMetadataFromOpfXml(opfXml);
-		},
-		catch: (cause) =>
-			new ParseError({
-				stage: "epub.metadata",
-				cause,
-			}),
-	});
-
 function getXmlAttr(tag: string, name: string): string | undefined {
 	const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const match = new RegExp(
@@ -782,22 +732,6 @@ function normalizeZipPath(path: string): string {
 	}
 
 	return normalized.join("/");
-}
-
-function resolveEntryData(
-	entries: Record<string, Uint8Array>,
-	baseDir: string,
-	href: string,
-): Uint8Array | undefined {
-	const decodedHref = decodeURIComponent(href.trim());
-	const candidate = normalizeZipPath(`${baseDir}${decodedHref}`);
-	const noDotPrefix = candidate.replace(/^\.\//, "");
-
-	return (
-		entries[candidate] ??
-		entries[noDotPrefix] ??
-		entries[decodeURIComponent(candidate)]
-	);
 }
 
 function normalizeEntryPath(baseDir: string, href: string): string {
@@ -856,170 +790,3 @@ function extractImageHrefFromContentDocument(
 
 	return undefined;
 }
-
-export const parseEpubCover = (buffer: ArrayBuffer) =>
-	Effect.try({
-		try: (): EpubCover | undefined => {
-			const entries = unzipSync(new Uint8Array(buffer));
-			const opfPath = findOpfPath(entries);
-			if (!opfPath) return undefined;
-
-			const opfXml = readZipText(entries, opfPath);
-			if (!opfXml) return undefined;
-
-			const opfDir = opfPath.includes("/")
-				? opfPath.substring(0, opfPath.lastIndexOf("/") + 1)
-				: "";
-
-			let coverHref: string | undefined;
-			let coverMimeType: string | undefined;
-			const itemTags = opfXml.match(/<item\b[^>]*>/gi) ?? [];
-			const manifestItems = itemTags
-				.map((tag) => ({
-					id: getXmlAttr(tag, "id"),
-					href: getXmlAttr(tag, "href"),
-					mediaType: getXmlAttr(tag, "media-type"),
-					properties: getXmlAttr(tag, "properties"),
-				}))
-				.filter((item) => !!item.href);
-
-			const findManifestItemByHref = (href: string, baseDir = opfDir) => {
-				const targetPath = normalizeEntryPath(baseDir, href);
-				return manifestItems.find((item) => {
-					if (!item.href) return false;
-					return normalizeEntryPath(opfDir, item.href) === targetPath;
-				});
-			};
-
-			// EPUB 3: <item properties="cover-image" .../>
-			const epub3Item = manifestItems.find((item) => {
-				const properties = item.properties;
-				return properties
-					? properties.split(/\s+/).includes("cover-image")
-					: false;
-			});
-			if (epub3Item) {
-				coverHref = epub3Item.href;
-				coverMimeType = epub3Item.mediaType;
-			}
-
-			// EPUB 2/3: <item id="cover-image|cover" .../>
-			if (!coverHref) {
-				const idItem = manifestItems.find((item) => {
-					const id = item.id?.toLowerCase();
-					return id === "cover-image" || id === "cover";
-				});
-				if (idItem) {
-					coverHref = idItem.href;
-					coverMimeType = idItem.mediaType;
-				}
-			}
-
-			// EPUB 2 fallback: <meta name="cover" content="<item-id>"/>
-			if (!coverHref) {
-				const metaTags = opfXml.match(/<meta\b[^>]*>/gi) ?? [];
-				const coverMeta = metaTags.find(
-					(tag) => getXmlAttr(tag, "name")?.toLowerCase() === "cover",
-				);
-				const coverId = coverMeta
-					? getXmlAttr(coverMeta, "content")
-					: undefined;
-
-				if (coverId) {
-					const item = manifestItems.find(
-						(item) => item.id?.toLowerCase() === coverId.toLowerCase(),
-					);
-					if (item) {
-						coverHref = item.href;
-						coverMimeType = item.mediaType;
-					}
-				}
-			}
-
-			// EPUB 2 guide: <reference type="cover" href="..."/>
-			if (!coverHref) {
-				const guideReferenceTags = opfXml.match(/<reference\b[^>]*>/gi) ?? [];
-				const coverReference = guideReferenceTags.find((tag) =>
-					(getXmlAttr(tag, "type") ?? "").toLowerCase().includes("cover"),
-				);
-
-				if (coverReference) {
-					coverHref = getXmlAttr(coverReference, "href");
-					const guideManifestItem = coverHref
-						? findManifestItemByHref(coverHref)
-						: undefined;
-					coverMimeType = guideManifestItem?.mediaType;
-				}
-			}
-
-			// Heuristic fallback: image entry whose id/href includes "cover".
-			if (!coverHref) {
-				const manifestCoverItem = manifestItems.find((item) => {
-					const id = (item.id ?? "").toLowerCase();
-					const href = (item.href ?? "").toLowerCase();
-					const mediaType = (item.mediaType ?? "").toLowerCase();
-
-					return (
-						mediaType.startsWith("image/") &&
-						(id.includes("cover") || href.includes("cover"))
-					);
-				});
-
-				if (manifestCoverItem) {
-					coverHref = manifestCoverItem.href;
-					coverMimeType = manifestCoverItem.mediaType;
-				}
-			}
-
-			if (!coverHref) return undefined;
-
-			let currentHref = coverHref;
-			let currentBaseDir = opfDir;
-			let currentMimeType = coverMimeType;
-
-			for (let depth = 0; depth < 3; depth++) {
-				const resolvedPath = normalizeEntryPath(currentBaseDir, currentHref);
-				const data = resolveEntryData(entries, currentBaseDir, currentHref);
-				if (!data) return undefined;
-
-				const manifestItem = findManifestItemByHref(
-					currentHref,
-					currentBaseDir,
-				);
-				const resolvedMimeType =
-					currentMimeType ??
-					manifestItem?.mediaType ??
-					inferCoverMimeTypeFromPath(resolvedPath);
-
-				if (!isContentDocumentReference(resolvedPath, resolvedMimeType)) {
-					const finalMimeType = resolvedMimeType
-						.toLowerCase()
-						.startsWith("image/")
-						? resolvedMimeType
-						: inferCoverMimeTypeFromPath(resolvedPath);
-					return { data, mimeType: finalMimeType };
-				}
-
-				const contentDocMarkup = strFromU8(data);
-				const embeddedCoverHref =
-					extractImageHrefFromContentDocument(contentDocMarkup);
-				if (!embeddedCoverHref) return undefined;
-
-				currentBaseDir = resolvedPath.includes("/")
-					? resolvedPath.substring(0, resolvedPath.lastIndexOf("/") + 1)
-					: "";
-				currentHref = embeddedCoverHref;
-				currentMimeType = findManifestItemByHref(
-					embeddedCoverHref,
-					currentBaseDir,
-				)?.mediaType;
-			}
-
-			return undefined;
-		},
-		catch: (cause) =>
-			new ParseError({
-				stage: "epub.cover",
-				cause,
-			}),
-	});

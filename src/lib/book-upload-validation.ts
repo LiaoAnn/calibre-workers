@@ -21,7 +21,7 @@ const supportedBookUploadMimeTypeSet = new Set<string>(
 const normalizeMimeType = (value?: string): string =>
 	value?.split(";")[0]?.trim().toLowerCase() ?? "";
 
-export const isSupportedBookUploadFileType = (
+const isSupportedBookUploadFileType = (
 	input: Pick<BookUploadValidationInput, "name" | "type">,
 ): boolean => {
 	const lowerName = input.name.toLowerCase();

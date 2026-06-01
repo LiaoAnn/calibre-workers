@@ -1,7 +1,6 @@
 import { handleConversionQueue } from "./conversion";
 import { handleMetadataQueue } from "./metadata";
 
-export type { ConversionQueueMessage } from "./conversion";
 export type { MetadataQueueMessage } from "./metadata";
 
 const CONVERSION_QUEUE_NAME = "calibre-conversion";

@@ -6,9 +6,7 @@ import type { BookFileFormat, ConversionJobStatus } from "#/db/schema";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 
-export class ConversionJobNotFound extends Data.TaggedError(
-	"ConversionJobNotFound",
-)<{
+class ConversionJobNotFound extends Data.TaggedError("ConversionJobNotFound")<{
 	readonly jobId: string;
 }> {}
 

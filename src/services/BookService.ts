@@ -6,7 +6,7 @@ import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
 import { r2Keys } from "#/lib/r2-keys";
 
-export class BookNotFound extends Data.TaggedError("BookNotFound")<{
+class BookNotFound extends Data.TaggedError("BookNotFound")<{
 	readonly bookId: string;
 }> {}
 
@@ -25,9 +25,7 @@ interface MetadataSyncFile {
 	format: schema.BookFileFormat;
 }
 
-export class MetadataJobNotFound extends Data.TaggedError(
-	"MetadataJobNotFound",
-)<{
+class MetadataJobNotFound extends Data.TaggedError("MetadataJobNotFound")<{
 	readonly jobId: string;
 }> {}
 
@@ -49,7 +47,7 @@ export interface ListBooksInput {
 	author?: string;
 }
 
-export interface ListBooksResult {
+interface ListBooksResult {
 	items: Array<typeof schema.books.$inferSelect>;
 	total: number;
 	page: number;

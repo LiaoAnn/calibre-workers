@@ -1,6 +1,6 @@
 export const COVER_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
-export const SUPPORTED_COVER_MIME_TYPES = [
+const SUPPORTED_COVER_MIME_TYPES = [
 	"image/jpeg",
 	"image/jpg",
 	"image/png",
@@ -8,7 +8,7 @@ export const SUPPORTED_COVER_MIME_TYPES = [
 	"image/gif",
 ] as const;
 
-export const SUPPORTED_COVER_EXTENSIONS = [
+const SUPPORTED_COVER_EXTENSIONS = [
 	".jpg",
 	".jpeg",
 	".png",
