@@ -313,6 +313,7 @@ const buildMetadata = ({
 const buildTagPayload = ({
 	shelf,
 	bookUuids,
+	lastModified,
 }: {
 	shelf: {
 		id: string;
@@ -321,6 +322,7 @@ const buildTagPayload = ({
 		updatedAt: Date;
 	};
 	bookUuids: string[];
+	lastModified?: Date;
 }): KoboTagPayload => ({
 	Tag: {
 		Created: toKoboTimestamp(shelf.createdAt),
@@ -329,7 +331,7 @@ const buildTagPayload = ({
 			RevisionId: bookUuid,
 			Type: KOBO_TAG_ITEM_TYPE_PRODUCT_REVISION,
 		})),
-		LastModified: toKoboTimestamp(shelf.updatedAt),
+		LastModified: toKoboTimestamp(lastModified ?? shelf.updatedAt),
 		Name: shelf.name,
 		Type: KOBO_TAG_TYPE_USER_TAG,
 	},
@@ -756,8 +758,11 @@ export const buildLocalLibrarySync = ({
 				const archived = archivedByBookId.get(book.id);
 				const isNew = !syncedBookSet.has(book.id);
 				const isOrphaned = orphanedSyncedBookIdSet.has(book.id);
+				// Keep synced markers for archived books so a later restore is sent
+				// as ChangedEntitlement. Only synthesize orphan archive once.
+				const shouldArchiveOrphan = isOrphaned && !archived?.isArchived;
 				const changed =
-					isOrphaned ||
+					shouldArchiveOrphan ||
 					book.lastModified > syncToken.booksLastModified ||
 					book.timestamp > syncToken.booksLastCreated ||
 					(archived?.lastModified ?? new Date(0)) >
@@ -768,6 +773,7 @@ export const buildLocalLibrarySync = ({
 					changed,
 					archived,
 					isOrphaned,
+					shouldArchiveOrphan,
 				};
 			})
 			.filter((entry) => entry.isNew || entry.changed);
@@ -835,11 +841,20 @@ export const buildLocalLibrarySync = ({
 							},
 						];
 
+			// Archive/unarchive changes are entitlement changes even when the book
+			// metadata timestamp itself has not moved.
+			const entitlementLastModified = entry.isOrphaned
+				? archivedOrphanTimestamp
+				: entry.archived &&
+						entry.archived.lastModified > entry.book.lastModified
+					? entry.archived.lastModified
+					: entry.book.lastModified;
+
 			const entitlement = buildEntitlement({
 				book: {
 					uuid: entry.book.uuid,
 					timestamp: entry.book.timestamp,
-					lastModified: entry.book.lastModified,
+					lastModified: entitlementLastModified,
 				},
 				archived: entry.isOrphaned || (entry.archived?.isArchived ?? false),
 			});
@@ -882,7 +897,7 @@ export const buildLocalLibrarySync = ({
 				});
 			}
 
-			if (entry.isOrphaned) {
+			if (entry.shouldArchiveOrphan) {
 				archivedOrphanBookIds.push(entry.book.id);
 			}
 
@@ -894,7 +909,7 @@ export const buildLocalLibrarySync = ({
 				entry.book.timestamp > nextSyncToken.booksLastCreated
 					? entry.book.timestamp
 					: nextSyncToken.booksLastCreated;
-			const archiveLastModified = entry.isOrphaned
+			const archiveLastModified = entry.shouldArchiveOrphan
 				? archivedOrphanTimestamp
 				: (entry.archived?.lastModified ?? new Date(0));
 			nextSyncToken.archiveLastModified =
@@ -921,6 +936,7 @@ export const buildLocalLibrarySync = ({
 					NewTag: buildTagPayload({
 						shelf,
 						bookUuids: shelfBookUuids.get(shelf.id) ?? [],
+						lastModified: latestShelfActivity,
 					}),
 				});
 			} else {
@@ -928,6 +944,7 @@ export const buildLocalLibrarySync = ({
 					ChangedTag: buildTagPayload({
 						shelf,
 						bookUuids: shelfBookUuids.get(shelf.id) ?? [],
+						lastModified: latestShelfActivity,
 					}),
 				});
 			}
@@ -1124,15 +1141,6 @@ export const buildLocalLibrarySync = ({
 					})),
 				);
 			}
-
-			yield* database
-				.delete(schema.koboSyncedBooks)
-				.where(
-					and(
-						eq(schema.koboSyncedBooks.userId, userId),
-						inArray(schema.koboSyncedBooks.bookId, uniqueArchivedOrphanBookIds),
-					),
-				);
 		}
 
 		if (newSyncedBookIds.length > 0) {
@@ -1738,18 +1746,58 @@ export const setArchivedBookByUuid = ({
 			});
 		}
 
-		if (isArchived) {
-			yield* database
-				.delete(schema.koboSyncedBooks)
-				.where(
-					and(
-						eq(schema.koboSyncedBooks.userId, userId),
-						eq(schema.koboSyncedBooks.bookId, book.id),
-					),
-				);
+		return { success: true as const, bookId: book.id };
+	});
+
+export const unarchiveBooksForKoboSync = ({
+	userId,
+	bookIds,
+}: {
+	userId: string;
+	bookIds: string[];
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const normalizedBookIds = [
+			...new Set(bookIds.map((bookId) => bookId.trim()).filter(Boolean)),
+		];
+
+		if (normalizedBookIds.length === 0) {
+			return { unarchivedBookIds: [] as string[] };
 		}
 
-		return { success: true as const, bookId: book.id };
+		const archivedRows = yield* database
+			.select({ bookId: schema.archivedBooks.bookId })
+			.from(schema.archivedBooks)
+			.where(
+				and(
+					eq(schema.archivedBooks.userId, userId),
+					inArray(schema.archivedBooks.bookId, normalizedBookIds),
+					eq(schema.archivedBooks.isArchived, true),
+				),
+			);
+
+		const archivedBookIdSet = new Set(archivedRows.map((row) => row.bookId));
+		const unarchivedBookIds = normalizedBookIds.filter((bookId) =>
+			archivedBookIdSet.has(bookId),
+		);
+
+		if (unarchivedBookIds.length === 0) {
+			return { unarchivedBookIds };
+		}
+
+		yield* database
+			.update(schema.archivedBooks)
+			.set({ isArchived: false, lastModified: now() })
+			.where(
+				and(
+					eq(schema.archivedBooks.userId, userId),
+					inArray(schema.archivedBooks.bookId, unarchivedBookIds),
+					eq(schema.archivedBooks.isArchived, true),
+				),
+			);
+
+		return { unarchivedBookIds };
 	});
 
 const normalizeRevisionIds = (revisionIds: string[]) => [
@@ -1900,7 +1948,7 @@ const addBookIdsToTagShelf = ({
 		// Touch shelf row so tag LastModified reflects item changes as well.
 		yield* database
 			.update(schema.shelves)
-			.set({ name: tagName })
+			.set({ name: tagName, updatedAt: now() })
 			.where(eq(schema.shelves.id, tagId));
 
 		return { addedCount: toInsertBookIds.length };
@@ -1934,10 +1982,64 @@ const removeBookIdsFromTagShelf = ({
 		// Touch shelf row so tag LastModified reflects item removals too.
 		yield* database
 			.update(schema.shelves)
-			.set({ name: tagName })
+			.set({ name: tagName, updatedAt: now() })
 			.where(eq(schema.shelves.id, tagId));
 
 		return { removedCount: normalizedBookIds.length };
+	});
+
+const getRemovableBookIdsForKoboTagDelete = ({
+	userId,
+	tagId,
+	bookIds,
+}: {
+	userId: string;
+	tagId: string;
+	bookIds: string[];
+}) =>
+	Effect.gen(function* () {
+		const database = yield* DatabaseContext;
+		const normalizedBookIds = [...new Set(bookIds)];
+		if (normalizedBookIds.length === 0) {
+			return [] as string[];
+		}
+
+		const shelfRows = yield* database
+			.select({ bookId: schema.shelfBooks.bookId })
+			.from(schema.shelfBooks)
+			.where(
+				and(
+					eq(schema.shelfBooks.shelfId, tagId),
+					inArray(schema.shelfBooks.bookId, normalizedBookIds),
+				),
+			);
+		const currentShelfBookIds = shelfRows.map((row) => row.bookId);
+		if (currentShelfBookIds.length === 0) {
+			return [] as string[];
+		}
+
+		const archiveRows = yield* database
+			.select({
+				bookId: schema.archivedBooks.bookId,
+				isArchived: schema.archivedBooks.isArchived,
+			})
+			.from(schema.archivedBooks)
+			.where(
+				and(
+					eq(schema.archivedBooks.userId, userId),
+					inArray(schema.archivedBooks.bookId, currentShelfBookIds),
+				),
+			);
+		const archiveByBookId = new Map(
+			archiveRows.map((row) => [row.bookId, row]),
+		);
+
+		// Kobo tag delete requests do not include a base tag version. If the Web UI
+		// already restored the book, ignore the device replaying its stale delete.
+		return currentShelfBookIds.filter((bookId) => {
+			const archive = archiveByBookId.get(bookId);
+			return !archive || archive.isArchived;
+		});
 	});
 
 export const createOrUpdateKoboTag = ({
@@ -2104,6 +2206,10 @@ export const addItemsToKoboTag = ({
 			tagName: shelf.tagName,
 			bookIds,
 		});
+		yield* unarchiveBooksForKoboSync({
+			userId,
+			bookIds,
+		});
 
 		return { success: true as const, tagId, unknownRevisionIds };
 	});
@@ -2121,10 +2227,15 @@ export const removeItemsFromKoboTag = ({
 		const shelf = yield* ensureEditableTagShelfForUser({ userId, tagId });
 		const { bookIds, unknownRevisionIds } =
 			yield* resolveBookIdsByRevisionIds(revisionIds);
+		const removableBookIds = yield* getRemovableBookIdsForKoboTagDelete({
+			userId,
+			tagId,
+			bookIds,
+		});
 		yield* removeBookIdsFromTagShelf({
 			tagId,
 			tagName: shelf.tagName,
-			bookIds,
+			bookIds: removableBookIds,
 		});
 
 		return { success: true as const, tagId, unknownRevisionIds };

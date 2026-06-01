@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import * as schema from "#/db/schema";
 import { DatabaseContext } from "#/layers/DatabaseLayer";
+import { unarchiveBooksForKoboSync } from "#/services/KoboService";
 
 export class ShelfNotFound extends Data.TaggedError("ShelfNotFound")<{
 	readonly shelfId: string;
@@ -554,6 +555,24 @@ export const addBooksToShelf = ({
 					order: maxOrder + index + 1,
 				})),
 			);
+
+			const membershipRows = yield* database
+				.select({ enableKoboSync: schema.shelfMembers.enableKoboSync })
+				.from(schema.shelfMembers)
+				.where(
+					and(
+						eq(schema.shelfMembers.shelfId, shelfId),
+						eq(schema.shelfMembers.userId, userId),
+					),
+				)
+				.limit(1);
+
+			if (membershipRows[0]?.enableKoboSync === true) {
+				yield* unarchiveBooksForKoboSync({
+					userId,
+					bookIds: toInsertBookIds,
+				});
+			}
 
 			yield* database
 				.update(schema.shelves)
