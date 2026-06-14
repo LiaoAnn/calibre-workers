@@ -1,8 +1,10 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"includeEntryExports": true,
 	"entry": [
 		"src/router.tsx",
-		"src/routes/**/*.{ts,tsx}"
+		"src/routes/**/*.{ts,tsx}",
+		"src/**/*.test.ts"
 	],
 	"project": [
 		"**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}",
@@ -22,6 +24,9 @@
 		"src/components/ui/**/*.{ts,tsx}": [
 			"exports",
 			"types"
+		],
+		"src/containers/converter/index.ts": [
+			"exports"
 		]
 	}
 }
