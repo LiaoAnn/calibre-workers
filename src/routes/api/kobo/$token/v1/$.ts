@@ -8,7 +8,7 @@ import {
 	koboJsonResponse,
 	proxyKoboHandlerOutput,
 	withKoboAuth,
-} from "#/lib/kobo.server";
+} from "#/features/kobo/lib/kobo.server";
 
 type RequestLike = Pick<
 	Request,

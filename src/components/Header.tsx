@@ -12,13 +12,13 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
-import { useUploadQueue } from "#/hooks/useUploadQueue";
-import { authClient, useSession } from "#/lib/auth-client";
+import { useUploadQueue } from "#/features/books/hooks/useUploadQueue";
 import {
 	BOOK_MAX_UPLOAD_SIZE_BYTES,
 	validateBookUploadFile,
-} from "#/lib/book-upload-validation";
-import { TaskNotification } from "./TaskNotification";
+} from "#/features/books/lib/book-upload-validation";
+import { TaskNotification } from "#/features/tasks/components/TaskNotification";
+import { authClient, useSession } from "#/shared/auth/auth-client";
 import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {

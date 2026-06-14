@@ -17,7 +17,7 @@ export default defineWorkersConfig(async () => {
 		plugins: [tsconfigPaths()],
 		test: {
 			include: ["src/**/*.test.ts"],
-			setupFiles: ["./src/test/apply-migrations.ts"],
+			setupFiles: ["./src/shared/test/apply-migrations.ts"],
 			poolOptions: {
 				workers: {
 					singleWorker: true,

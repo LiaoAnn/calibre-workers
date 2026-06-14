@@ -1,7 +1,5 @@
-import { handleConversionQueue } from "./conversion";
-import { handleMetadataQueue } from "./metadata";
-
-export type { MetadataQueueMessage } from "./metadata";
+import { handleMetadataQueue } from "#/features/books/queue/metadata";
+import { handleConversionQueue } from "#/features/conversion/queue/conversion";
 
 const CONVERSION_QUEUE_NAME = "calibre-conversion";
 const METADATA_QUEUE_NAME = "calibre-metadata";

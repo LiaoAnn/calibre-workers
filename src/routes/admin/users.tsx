@@ -6,14 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Combobox, type ComboboxOption } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
 import {
 	createManagedUserServerFn,
 	deleteUserServerFn,
 	getUsersServerFn,
 	updateUserServerFn,
-} from "#/server/users";
+} from "#/features/users/server/users";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { getPageTitle } from "#/shared/lib/utils";
 
 const roleOptions: ComboboxOption[] = [
 	{ value: "user", label: "一般使用者" },

@@ -7,8 +7,11 @@ import {
 	KoboMalformedRequest,
 	parseRenameTagBody,
 	withKoboAuth,
-} from "#/lib/kobo.server";
-import { deleteKoboTag, renameKoboTag } from "#/services/KoboService";
+} from "#/features/kobo/lib/kobo.server";
+import {
+	deleteKoboTag,
+	renameKoboTag,
+} from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/tags/$tagId")(
 	{

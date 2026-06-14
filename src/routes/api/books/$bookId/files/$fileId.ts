@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
-import { getBookFile, getBookFileRecord } from "#/services/FileService";
+import {
+	getBookFile,
+	getBookFileRecord,
+} from "#/features/files/services/FileService";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { AppLayer } from "#/shared/layers/AppLayer";
 
 export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 	beforeLoad: async () => {

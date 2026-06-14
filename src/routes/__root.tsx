@@ -9,13 +9,13 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { useEffect } from "react";
 import Header from "#/components/Header";
-import { TaskToastListener } from "#/components/TaskToastListener";
 import { Button } from "#/components/ui/button";
 import { Toaster } from "#/components/ui/sonner";
-import { useHasActiveNotificationTasks } from "#/hooks/useNotificationTasks";
-import TanStackQueryDevtools from "#/integrations/tanstack-query/devtools";
-import TanStackQueryProvider from "#/integrations/tanstack-query/root-provider";
-import { getPageTitle } from "#/lib/utils";
+import { TaskToastListener } from "#/features/tasks/components/TaskToastListener";
+import { useHasActiveNotificationTasks } from "#/features/tasks/hooks/useNotificationTasks";
+import TanStackQueryDevtools from "#/shared/integrations/tanstack-query/devtools";
+import TanStackQueryProvider from "#/shared/integrations/tanstack-query/root-provider";
+import { getPageTitle } from "#/shared/lib/utils";
 import appCss from "#/styles.css?url";
 
 interface MyRouterContext {

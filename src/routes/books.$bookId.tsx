@@ -25,16 +25,19 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
-import type { BookFileFormat, MetadataSyncStatus } from "#/db/schema";
-import { useConversionTasks } from "#/hooks/useConversionTasks";
-import { shelvesQueryKeys, useShelves } from "#/hooks/useShelves";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
-import { getBookByIdServerFn } from "#/server/books";
+import { getBookByIdServerFn } from "#/features/books/server/books";
+import {
+	shelvesQueryKeys,
+	useShelves,
+} from "#/features/shelves/hooks/useShelves";
 import {
 	addBooksToShelfServerFn,
 	listBookShelfIdsServerFn,
-} from "#/server/shelves";
+} from "#/features/shelves/server/shelves";
+import { useConversionTasks } from "#/features/tasks/hooks/useConversionTasks";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import type { BookFileFormat, MetadataSyncStatus } from "#/shared/db/schema";
+import { getPageTitle } from "#/shared/lib/utils";
 
 const isMetadataSyncing = (status: MetadataSyncStatus) =>
 	status === "pending" || status === "processing";

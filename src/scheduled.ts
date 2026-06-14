@@ -1,10 +1,10 @@
 import "@tanstack/react-start/server-only";
 
 import { Duration, Effect } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
-import { failStaleMetadataTasks } from "#/services/BookService";
-import { failStaleConversionJobs } from "#/services/ConversionService";
-import { failStaleUploadTasks } from "#/services/FileService";
+import { failStaleMetadataTasks } from "#/features/books/services/BookService";
+import { failStaleConversionJobs } from "#/features/conversion/services/ConversionService";
+import { failStaleUploadTasks } from "#/features/files/services/FileService";
+import { AppLayer } from "#/shared/layers/AppLayer";
 
 const STALE_TASK_WINDOW = Duration.minutes(45);
 const STALE_CONVERSION_ERROR_MESSAGE =

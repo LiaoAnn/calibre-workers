@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import BookCard from "#/components/BookCard";
 import {
 	Card,
 	CardContent,
@@ -7,8 +6,9 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
-import { getPageTitle } from "#/lib/utils";
-import { listBooksServerFn } from "#/server/books";
+import BookCard from "#/features/books/components/BookCard";
+import { listBooksServerFn } from "#/features/books/server/books";
+import { getPageTitle } from "#/shared/lib/utils";
 
 const decodeName = (name: string) => {
 	try {

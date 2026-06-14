@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect, Either } from "effect";
-import { AppLayer } from "#/layers/AppLayer";
-import { r2Keys } from "#/lib/r2-keys";
-import { getBookFile } from "#/services/FileService";
+import { getBookFile } from "#/features/files/services/FileService";
+import { AppLayer } from "#/shared/layers/AppLayer";
+import { r2Keys } from "#/shared/lib/r2-keys";
 
 export const Route = createFileRoute("/api/books/$bookId/cover")({
 	server: {

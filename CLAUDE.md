@@ -47,27 +47,48 @@ If Biome reports auto-fixable issues: `pnpm exec biome check --write .` then rer
 
 ## Architecture
 
+### Code organization — vertical slices
+
+Code is grouped by **feature**, not by technical layer:
+
+```
+src/
+  features/<feature>/   books, files, conversion, shelves, kobo, tasks, users
+    services/           Effect business logic (+ colocated *.test.ts)
+    server/             createServerFn handlers (imported by routes)
+    hooks/              React hooks
+    components/         React components
+    queue/  lib/        feature queue handlers / feature-local helpers
+  shared/               cross-cutting infra: layers, db, auth, lib, integrations, test
+  components/           app shell (Header, ThemeToggle) + ui/ (shadcn design system)
+  routes/               TanStack file-based routes (must stay here) — thin, import from features
+  index.ts scheduled.ts router.tsx queue/index.ts   root wiring
+```
+
+Feature dependency graph is **acyclic** (enforce this when adding cross-feature imports):
+`files ← books ← conversion ← kobo ← shelves`, plus `tasks → conversion`, `users` standalone. Cross-feature imports reference another slice's `services`/`server`/`hooks` directly (e.g. `#/features/kobo/services/KoboService`). Never add a back-edge (e.g. `kobo` importing `shelves`); the kobo-settings page composes both features at the **route** level instead.
+
 ### Request flow
 
 `src/index.ts` is the Worker entrypoint. It exports:
 - `default.fetch` — forwards to TanStack Start SSR server, with special Kobo request normalization (duplicate slashes and non-HTML `accept` headers)
-- `default.queue` — routes `calibre-conversion` and `calibre-metadata` queues to handlers in `src/queue/`
+- `default.queue` — `src/queue/index.ts` dispatcher routes `calibre-conversion`/`calibre-metadata` to feature queue handlers (`src/features/conversion/queue/`, `src/features/books/queue/`)
 - `default.scheduled` — cron handler (every 15 min) in `src/scheduled.ts`
 - `ConverterContainer` — Durable Object backed by a Cloudflare Container (Go binary in `src/containers/converter/`)
 
 ### Frontend / routing
 
-File-based routing via TanStack Router. Route files in `src/routes/` auto-generate `src/routeTree.gen.ts` — **never edit that file manually**.
+File-based routing via TanStack Router. Route files in `src/routes/` auto-generate `src/routeTree.gen.ts` — **never edit that file manually**. Routes are thin composers that import feature `server`/`hooks`/`components`.
 
 ### Server functions
 
-`src/server/*.ts` files contain `createServerFn()` calls (TanStack Start). These run server-side and are the bridge between React routes and Effect services. One file per domain: `books.ts`, `files.ts`, `conversions.ts`, `kobo.ts`, `shelves.ts`, `tasks.ts`, `users.ts`, `autocomplete.ts`.
+`src/features/<feature>/server/*.ts` contain `createServerFn()` calls (TanStack Start) — the bridge between React routes and Effect services.
 
 ### Effect service layer
 
-Business logic lives in `src/services/PascalCase.ts` and uses Effect for async + typed errors. Services receive dependencies (DB, R2) via Effect context.
+Business logic lives in `src/features/<feature>/services/PascalCase.ts` and uses Effect for async + typed errors. Services receive dependencies (DB, R2) via Effect context.
 
-Layers are composed in `src/layers/`:
+Layers are composed in `src/shared/layers/`:
 - `DatabaseLive` — Drizzle + `@effect/sql-d1`
 - `R2Live` — Cloudflare R2 bucket
 - `ConverterContainerLive` — Durable Object proxy for converter
@@ -79,7 +100,7 @@ Pattern: server functions call `Effect.runPromise(someService(...).pipe(Effect.p
 
 ### Database
 
-Single schema file: `src/db/schema.ts` (Drizzle + Cloudflare D1/SQLite).
+Single schema file: `src/shared/db/schema.ts` (Drizzle + Cloudflare D1/SQLite). Kept centralized because relations span features.
 
 Key domain tables: `books`, `book_files`, `tags`, `series`, `publishers`, `identifiers`, `comments`, `shelves`, `shelf_books`, `shelf_members`, `conversion_jobs`, `metadata_jobs`, `upload_tasks`.
 
@@ -90,12 +111,12 @@ Auth tables (managed by Better Auth): `user`, `session`, `account`, `verificatio
 ### Background jobs
 
 Two queues:
-- `calibre-conversion` → `src/queue/conversion.ts` — format conversion via `ConverterContainer`
-- `calibre-metadata` → `src/queue/metadata.ts` — EPUB metadata extraction
+- `calibre-conversion` → `src/features/conversion/queue/conversion.ts` — format conversion via `ConverterContainer`
+- `calibre-metadata` → `src/features/books/queue/metadata.ts` — EPUB metadata extraction
 
 ### Kobo sync
 
-`src/server/kobo.ts` + `src/services/KoboService.ts` implement the Kobo sync API. Kobo devices send requests with double slashes and non-standard `accept` headers; `src/index.ts` normalizes these before they reach TanStack Start.
+`src/features/kobo/` (`server/kobo.ts` + `services/KoboService.ts` + `lib/kobo.server.ts`) implements the Kobo sync API. Kobo devices send requests with double slashes and non-standard `accept` headers; `src/index.ts` normalizes these before they reach TanStack Start.
 
 ### Go converter
 
@@ -105,9 +126,9 @@ Two queues:
 
 `pnpm test` runs Vitest under `@cloudflare/vitest-pool-workers` (config: `vitest.config.ts`), executing tests inside `workerd` with real local Miniflare bindings (D1 + R2 + queues). Because services read bindings via `env` from `cloudflare:workers`, the production Effect layers (`AppLayer`) run unchanged in tests.
 
-- Tests are colocated as `src/services/*.test.ts`.
-- `src/test/helpers.ts` exposes `runTest` / `runTestExit` (provide `AppLayer` + a fake converter layer) plus `seedUser`/`seedBook`/`seedBookFile`.
-- `src/test/apply-migrations.ts` applies `migrations/` to the local D1 before the suite; `isolatedStorage` resets D1/R2 per test.
+- Tests are colocated as `src/features/<feature>/services/*.test.ts`.
+- `src/shared/test/helpers.ts` exposes `runTest` / `runTestExit` (provide `AppLayer` + a fake converter layer) plus `seedUser`/`seedBook`/`seedBookFile`.
+- `src/shared/test/apply-migrations.ts` applies `migrations/` to the local D1 before the suite; `isolatedStorage` resets D1/R2 per test.
 - Bindings are configured explicitly in `vitest.config.ts` (not imported from `wrangler.jsonc`) so Miniflare never tries to build the Docker-backed `ConverterContainer`. Container-dependent paths use the fake converter layer.
 
 ### UI components

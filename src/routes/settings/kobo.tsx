@@ -21,13 +21,17 @@ import {
 } from "#/components/ui/dialog";
 import {
 	useCreateKoboToken,
-	useKoboSettings,
+	useKoboTokens,
 	useRevokeKoboToken,
+} from "#/features/kobo/hooks/useKoboSettings";
+import { getKoboTokensServerFn } from "#/features/kobo/server/kobo";
+import {
 	useSetShelfKoboSync,
-} from "#/hooks/useKoboSettings";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
-import { getKoboSettingsServerFn } from "#/server/kobo";
+	useShelfKoboSyncSettings,
+} from "#/features/shelves/hooks/useShelfKoboSync";
+import { listShelfKoboSyncSettingsServerFn } from "#/features/shelves/server/shelves";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { getPageTitle } from "#/shared/lib/utils";
 
 const formatDateTime = (value: Date | string | number | null) => {
 	if (!value) {
@@ -66,14 +70,24 @@ export const Route = createFileRoute("/settings/kobo")({
 	head: () => ({
 		meta: [{ title: getPageTitle("Kobo 裝置同步") }],
 	}),
-	loader: () => getKoboSettingsServerFn(),
+	loader: async () => {
+		const [tokens, shelves] = await Promise.all([
+			getKoboTokensServerFn(),
+			listShelfKoboSyncSettingsServerFn(),
+		]);
+		return { tokens, shelves };
+	},
 	component: KoboSettingsPage,
 });
 
 function KoboSettingsPage() {
 	const initialData = Route.useLoaderData();
-	const { data } = useKoboSettings(initialData);
-	const settings = data ?? initialData;
+	const { data: tokensData } = useKoboTokens(initialData.tokens);
+	const { data: shelvesData } = useShelfKoboSyncSettings(initialData.shelves);
+	const settings = {
+		tokens: tokensData ?? initialData.tokens,
+		shelves: shelvesData ?? initialData.shelves,
+	};
 	const createKoboTokenMutation = useCreateKoboToken();
 	const revokeKoboTokenMutation = useRevokeKoboToken();
 	const setShelfKoboSyncMutation = useSetShelfKoboSync();

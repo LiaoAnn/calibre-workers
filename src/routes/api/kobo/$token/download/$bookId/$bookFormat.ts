@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
-import { KoboFileNotFound, withKoboAuth } from "#/lib/kobo.server";
-import { getBookFile } from "#/services/FileService";
-import { getDownloadFileForKobo } from "#/services/KoboService";
+import { getBookFile } from "#/features/files/services/FileService";
+import {
+	KoboFileNotFound,
+	withKoboAuth,
+} from "#/features/kobo/lib/kobo.server";
+import { getDownloadFileForKobo } from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute(
 	"/api/kobo/$token/download/$bookId/$bookFormat",

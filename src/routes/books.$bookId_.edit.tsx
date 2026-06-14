@@ -13,14 +13,11 @@ import { Combobox } from "#/components/ui/combobox";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Textarea } from "#/components/ui/textarea";
-import { metadataQueryKeys } from "#/hooks/useMetadataTasks";
 import {
 	COVER_ACCEPT_MIME_TYPES,
 	type CoverValidationIssue,
 	validateCoverFile,
-} from "#/lib/cover-validation";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
+} from "#/features/books/lib/cover-validation";
 import {
 	searchAuthorsServerFn,
 	searchIdentifierTypesServerFn,
@@ -28,9 +25,15 @@ import {
 	searchPublishersServerFn,
 	searchSeriesServerFn,
 	searchTagsServerFn,
-} from "#/server/autocomplete";
-import { getBookByIdServerFn, updateBookServerFn } from "#/server/books";
-import { uploadBookCoverTempServerFn } from "#/server/files";
+} from "#/features/books/server/autocomplete";
+import {
+	getBookByIdServerFn,
+	updateBookServerFn,
+} from "#/features/books/server/books";
+import { uploadBookCoverTempServerFn } from "#/features/books/server/files";
+import { metadataQueryKeys } from "#/features/tasks/hooks/useMetadataTasks";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { getPageTitle } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/books/$bookId_/edit")({
 	loader: ({ params }) =>

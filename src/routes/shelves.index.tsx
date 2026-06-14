@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CreateShelfDialog } from "#/components/shelve/CreateShelfDialog";
 import {
 	Card,
 	CardContent,
@@ -10,9 +9,16 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
-import { shelvesQueryKeys, useShelves } from "#/hooks/useShelves";
-import { getPageTitle } from "#/lib/utils";
-import { createShelfServerFn, listShelvesServerFn } from "#/server/shelves";
+import { CreateShelfDialog } from "#/features/shelves/components/CreateShelfDialog";
+import {
+	shelvesQueryKeys,
+	useShelves,
+} from "#/features/shelves/hooks/useShelves";
+import {
+	createShelfServerFn,
+	listShelvesServerFn,
+} from "#/features/shelves/server/shelves";
+import { getPageTitle } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/shelves/")({
 	loader: () => listShelvesServerFn(),

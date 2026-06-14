@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
 
 export const Route = createFileRoute("/shelves")({
 	beforeLoad: async () => {

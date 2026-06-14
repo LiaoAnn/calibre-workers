@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect, Either } from "effect";
-import { withKoboAuth } from "#/lib/kobo.server";
-import { r2Keys } from "#/lib/r2-keys";
-import { getBookFile } from "#/services/FileService";
-import { getBookByUuid } from "#/services/KoboService";
+import { getBookFile } from "#/features/files/services/FileService";
+import { withKoboAuth } from "#/features/kobo/lib/kobo.server";
+import { getBookByUuid } from "#/features/kobo/services/KoboService";
+import { r2Keys } from "#/shared/lib/r2-keys";
 
 const KOBO_IMAGEHOST_URL = "https://cdn.kobo.com/book-images";
 

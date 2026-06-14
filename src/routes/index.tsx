@@ -1,7 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import BookCard from "#/components/BookCard";
 import {
 	Card,
 	CardContent,
@@ -9,9 +8,10 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
-import { listBooksServerFn } from "#/server/books";
+import BookCard from "#/features/books/components/BookCard";
+import { listBooksServerFn } from "#/features/books/server/books";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { getPageTitle } from "#/shared/lib/utils";
 
 const PAGE_SIZE = 24;
 

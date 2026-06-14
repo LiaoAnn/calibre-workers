@@ -7,7 +7,7 @@ import {
 	koboInitializationResourceSnapshot,
 	koboJsonResponse,
 	withKoboAuth,
-} from "#/lib/kobo.server";
+} from "#/features/kobo/lib/kobo.server";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/initialization")({
 	server: {

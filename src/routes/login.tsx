@@ -10,9 +10,9 @@ import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
-import { authClient } from "#/lib/auth-client";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
+import { authClient } from "#/shared/auth/auth-client";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { getPageTitle } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/login")({
 	head: () => ({

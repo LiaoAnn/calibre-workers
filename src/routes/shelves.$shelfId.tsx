@@ -9,10 +9,6 @@ import {
 import { ArrowLeft, Check } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
-import BookCard from "#/components/BookCard";
-import { BatchDeleteConfirmDialog } from "#/components/shelve/BatchDeleteConfirmDialog";
-import { DeleteShelfDialog } from "#/components/shelve/DeleteShelfDialog";
-import { RenameShelfDialog } from "#/components/shelve/RenameShelfDialog";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -21,15 +17,19 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
-import { shelvesQueryKeys } from "#/hooks/useShelves";
-import { getPageTitle } from "#/lib/utils";
-import { getSessionFromMiddlewareFn } from "#/middleware/auth";
+import BookCard from "#/features/books/components/BookCard";
+import { BatchDeleteConfirmDialog } from "#/features/shelves/components/BatchDeleteConfirmDialog";
+import { DeleteShelfDialog } from "#/features/shelves/components/DeleteShelfDialog";
+import { RenameShelfDialog } from "#/features/shelves/components/RenameShelfDialog";
+import { shelvesQueryKeys } from "#/features/shelves/hooks/useShelves";
 import {
 	deleteShelfServerFn,
 	getShelfBooksServerFn,
 	removeBookFromShelfServerFn,
 	updateShelfServerFn,
-} from "#/server/shelves";
+} from "#/features/shelves/server/shelves";
+import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
+import { getPageTitle } from "#/shared/lib/utils";
 
 export const Route = createFileRoute("/shelves/$shelfId")({
 	loader: ({ params }) =>

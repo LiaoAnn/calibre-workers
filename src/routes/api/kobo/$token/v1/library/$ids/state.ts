@@ -9,11 +9,11 @@ import {
 	koboJsonResponse,
 	resolveKoboLocalOrProxy,
 	withKoboAuth,
-} from "#/lib/kobo.server";
+} from "#/features/kobo/lib/kobo.server";
 import {
 	getReadingStateResponseByBookUuid,
 	updateReadingStateByBookUuid,
-} from "#/services/KoboService";
+} from "#/features/kobo/services/KoboService";
 
 const parseIds = (value: string): string[] =>
 	value

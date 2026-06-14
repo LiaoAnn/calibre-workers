@@ -8,8 +8,8 @@ import {
 	koboJsonResponse,
 	resolveKoboLocalOrProxy,
 	withKoboAuth,
-} from "#/lib/kobo.server";
-import { getBookMetadataByUuid } from "#/services/KoboService";
+} from "#/features/kobo/lib/kobo.server";
+import { getBookMetadataByUuid } from "#/features/kobo/services/KoboService";
 
 const parseIds = (value: string): string[] =>
 	value
