@@ -499,7 +499,7 @@ export class ShelfService extends Effect.Service<ShelfService>()(
 				}: {
 					userId: string;
 					shelfId: string;
-					bookIds: string[];
+					bookIds: readonly string[];
 				}) {
 					yield* getOwnedShelf({ shelfId, userId });
 

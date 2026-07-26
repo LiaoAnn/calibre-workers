@@ -1,12 +1,17 @@
 import "@tanstack/react-start/server-only";
 
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 import * as schema from "#/shared/db/schema";
 import { DatabaseContext, DatabaseLive } from "#/shared/layers/DatabaseLayer";
 
-export type UserRole = "admin" | "user";
-export type UserStatus = "pending" | "active";
+// Single source of truth: the boundary validators decode with these schemas and
+// the service types are derived from them, so the two cannot drift apart.
+export const UserRoleSchema = Schema.Literal("admin", "user");
+export const UserStatusSchema = Schema.Literal("pending", "active");
+
+type UserRole = typeof UserRoleSchema.Type;
+type UserStatus = typeof UserStatusSchema.Type;
 
 class UserNotFound extends Data.TaggedError("UserNotFound")<{
 	readonly userId: string;

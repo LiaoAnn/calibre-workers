@@ -1,7 +1,7 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type {
 	InvalidShelfName,
 	ShelfAccessDenied,
@@ -11,39 +11,42 @@ import { ShelfService } from "#/features/shelves/services/ShelfService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import type { AppServices } from "#/shared/layers/AppLayer";
 import { runServerEffect } from "#/shared/server/runServerEffect";
+import { validateInput } from "#/shared/server/validateInput";
 
-interface ShelfByIdInput {
-	shelfId: string;
-}
+const ShelfId = Schema.NonEmptyString;
+const BookId = Schema.NonEmptyString;
 
-interface BookShelfIdsInput {
-	bookId: string;
-}
+const ShelfByIdInput = Schema.Struct({ shelfId: ShelfId });
 
-interface ShelfBooksInput extends ShelfByIdInput {
-	page?: number;
-	limit?: number;
-}
+const BookShelfIdsInput = Schema.Struct({ bookId: BookId });
 
-interface CreateShelfInput {
-	name: string;
-}
+const ShelfBooksInput = Schema.Struct({
+	shelfId: ShelfId,
+	page: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+	limit: Schema.optional(
+		Schema.Number.pipe(Schema.int(), Schema.between(1, 100)),
+	),
+});
 
-interface UpdateShelfInput extends ShelfByIdInput {
-	name?: string;
-}
+const CreateShelfInput = Schema.Struct({ name: Schema.String });
 
-interface AddBooksInput extends ShelfByIdInput {
-	bookIds: string[];
-}
+const UpdateShelfInput = Schema.Struct({
+	shelfId: ShelfId,
+	name: Schema.optional(Schema.String),
+});
 
-interface RemoveBookInput extends ShelfByIdInput {
-	bookId: string;
-}
+// Bounded so one request cannot ask for an unbounded batch insert.
+const AddBooksInput = Schema.Struct({
+	shelfId: ShelfId,
+	bookIds: Schema.Array(BookId).pipe(Schema.maxItems(500)),
+});
 
-interface SetShelfKoboSyncInput extends ShelfByIdInput {
-	enabled: boolean;
-}
+const RemoveBookInput = Schema.Struct({ shelfId: ShelfId, bookId: BookId });
+
+const SetShelfKoboSyncInput = Schema.Struct({
+	shelfId: ShelfId,
+	enabled: Schema.Boolean,
+});
 
 const runShelfEffect = <T>(
 	effect: Effect.Effect<
@@ -61,7 +64,7 @@ export const listShelvesServerFn = createServerFn({ method: "GET" })
 
 export const listBookShelfIdsServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: BookShelfIdsInput) => input)
+	.inputValidator(validateInput(BookShelfIdsInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.listBookShelfIds({
@@ -73,7 +76,7 @@ export const listBookShelfIdsServerFn = createServerFn({ method: "GET" })
 
 export const createShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: CreateShelfInput) => input)
+	.inputValidator(validateInput(CreateShelfInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.createShelf({
@@ -85,7 +88,7 @@ export const createShelfServerFn = createServerFn({ method: "POST" })
 
 export const getShelfBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: ShelfBooksInput) => input)
+	.inputValidator(validateInput(ShelfBooksInput))
 	.handler(async ({ data, context }) => {
 		// This one backs a route loader. A loader that throws an ordinary error
 		// renders the error boundary and answers 500, so an absent or inaccessible
@@ -114,7 +117,7 @@ export const getShelfBooksServerFn = createServerFn({ method: "GET" })
 
 export const updateShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: UpdateShelfInput) => input)
+	.inputValidator(validateInput(UpdateShelfInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.updateShelf({
@@ -127,7 +130,7 @@ export const updateShelfServerFn = createServerFn({ method: "POST" })
 
 export const deleteShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: ShelfByIdInput) => input)
+	.inputValidator(validateInput(ShelfByIdInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.deleteShelf({
@@ -139,7 +142,7 @@ export const deleteShelfServerFn = createServerFn({ method: "POST" })
 
 export const addBooksToShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: AddBooksInput) => input)
+	.inputValidator(validateInput(AddBooksInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.addBooksToShelf({
@@ -152,7 +155,7 @@ export const addBooksToShelfServerFn = createServerFn({ method: "POST" })
 
 export const removeBookFromShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: RemoveBookInput) => input)
+	.inputValidator(validateInput(RemoveBookInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.removeBookFromShelf({
@@ -177,7 +180,7 @@ export const listShelfKoboSyncSettingsServerFn = createServerFn({
 
 export const setShelfKoboSyncServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: SetShelfKoboSyncInput) => input)
+	.inputValidator(validateInput(SetShelfKoboSyncInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.setShelfKoboSync({

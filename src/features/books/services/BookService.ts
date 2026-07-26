@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 import * as schema from "#/shared/db/schema";
 import { DatabaseContext, DatabaseLive } from "#/shared/layers/DatabaseLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
@@ -71,22 +71,28 @@ interface CreateBookFromUploadInput {
 	hasCover?: boolean;
 }
 
-export interface UpdateBookInput {
-	bookId: string;
-	title: string;
-	authors: string[];
-	description?: string;
-	publisher?: string;
-	tags?: string[];
-	language?: string;
-	hasCover?: boolean;
+// Declared as a Schema so the server-function boundary can decode it and the
+// service type stays derived from the same definition.
+// TODO: rating (1–10, displayed as 0–5 stars) — requires ratings table link management
+export const UpdateBookInputSchema = Schema.Struct({
+	bookId: Schema.NonEmptyString,
+	title: Schema.String,
+	authors: Schema.Array(Schema.String),
+	description: Schema.optional(Schema.String),
+	publisher: Schema.optional(Schema.String),
+	tags: Schema.optional(Schema.Array(Schema.String)),
+	language: Schema.optional(Schema.String),
+	hasCover: Schema.optional(Schema.Boolean),
 	/** ISO date string (YYYY-MM-DD) or undefined/null to clear */
-	pubdate?: string | null;
-	series?: string;
-	seriesIndex?: number;
-	identifiers?: { type: string; value: string }[];
-	// TODO: rating (1–10, displayed as 0–5 stars) — requires ratings table link management
-}
+	pubdate: Schema.optional(Schema.NullOr(Schema.String)),
+	series: Schema.optional(Schema.String),
+	seriesIndex: Schema.optional(Schema.Number),
+	identifiers: Schema.optional(
+		Schema.Array(Schema.Struct({ type: Schema.String, value: Schema.String })),
+	),
+});
+
+type UpdateBookInput = typeof UpdateBookInputSchema.Type;
 
 export class BookService extends Effect.Service<BookService>()("BookService", {
 	accessors: true,

@@ -1,35 +1,41 @@
 import { env } from "cloudflare:workers";
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { MetadataQueueMessage } from "#/features/books/queue/metadata";
 import {
 	BookService,
-	type UpdateBookInput,
+	UpdateBookInputSchema,
 } from "#/features/books/services/BookService";
 import { FileService } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { r2Keys } from "#/shared/lib/r2-keys";
 import { runServerEffect } from "#/shared/server/runServerEffect";
+import { validateInput } from "#/shared/server/validateInput";
 
-interface ListBooksServerInput {
-	page?: number;
-	limit?: number;
-	author?: string;
-}
+const ListBooksServerInput = Schema.UndefinedOr(
+	Schema.Struct({
+		page: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+		limit: Schema.optional(
+			Schema.Number.pipe(Schema.int(), Schema.between(1, 100)),
+		),
+		author: Schema.optional(Schema.String.pipe(Schema.maxLength(200))),
+	}),
+);
 
-interface GetBookByIdServerInput {
-	bookId: string;
-}
+const GetBookByIdServerInput = Schema.Struct({
+	bookId: Schema.NonEmptyString,
+});
 
-interface UpdateBookServerInput extends UpdateBookInput {
-	coverTempR2Key?: string;
-}
+const UpdateBookServerInput = Schema.Struct({
+	...UpdateBookInputSchema.fields,
+	coverTempR2Key: Schema.optional(Schema.String),
+});
 
 export const listBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: ListBooksServerInput | undefined) => input)
+	.inputValidator(validateInput(ListBooksServerInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			BookService.listBooks({
@@ -42,7 +48,7 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 
 export const getBookByIdServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: GetBookByIdServerInput) => input)
+	.inputValidator(validateInput(GetBookByIdServerInput))
 	.handler(async ({ data }) => {
 		const book = await runServerEffect(
 			BookService.getBookById(data.bookId).pipe(
@@ -61,7 +67,7 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 
 export const updateBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: UpdateBookServerInput) => input)
+	.inputValidator(validateInput(UpdateBookServerInput))
 	.handler(async ({ data, context }) => {
 		const { coverTempR2Key, ...bookInput } = data;
 		const userId = context.session.user.id;

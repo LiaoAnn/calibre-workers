@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq } from "drizzle-orm";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 import {
 	BOOK_MAX_UPLOAD_SIZE_BYTES,
 	validateBookUploadFile,
@@ -18,6 +18,7 @@ import * as schema from "#/shared/db/schema";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
 import { runServerEffect } from "#/shared/server/runServerEffect";
+import { validateInput } from "#/shared/server/validateInput";
 
 class UploadError extends Data.TaggedError("UploadError")<{
 	readonly message: string;
@@ -123,17 +124,17 @@ export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
 		};
 	});
 
-interface CreateBookUploadSessionInput {
-	fileName: string;
-	fileSize: number;
-	mimeType?: string;
-}
+const CreateBookUploadSessionInput = Schema.Struct({
+	fileName: Schema.NonEmptyString,
+	fileSize: Schema.Number.pipe(Schema.int(), Schema.positive()),
+	mimeType: Schema.optional(Schema.String),
+});
 
 export const createBookUploadSessionServerFn = createServerFn({
 	method: "POST",
 })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: CreateBookUploadSessionInput) => input)
+	.inputValidator(validateInput(CreateBookUploadSessionInput))
 	.handler(async ({ data, context }) => {
 		const userId = context.session.user.id;
 		const fileName = data.fileName?.trim();
@@ -318,18 +319,25 @@ export const uploadBookPartServerFn = createServerFn({ method: "POST" })
 		return runServerEffect(runnable);
 	});
 
-interface CompleteBookUploadInput {
-	taskId: string;
-	parts: Array<{ partNumber: number; eTag: string }>;
-	fileSize: number;
-	mimeType?: string;
-	title?: string;
-	author?: string;
-}
+const CompleteBookUploadInput = Schema.Struct({
+	taskId: Schema.NonEmptyString,
+	// Bounded by R2's own multipart part ceiling, which the session setup
+	// already enforces when it hands out part numbers.
+	parts: Schema.Array(
+		Schema.Struct({
+			partNumber: Schema.Number.pipe(Schema.int(), Schema.positive()),
+			eTag: Schema.String,
+		}),
+	).pipe(Schema.maxItems(10_000)),
+	fileSize: Schema.Number.pipe(Schema.int(), Schema.positive()),
+	mimeType: Schema.optional(Schema.String),
+	title: Schema.optional(Schema.String),
+	author: Schema.optional(Schema.String),
+});
 
 export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: CompleteBookUploadInput) => input)
+	.inputValidator(validateInput(CompleteBookUploadInput))
 	.handler(async ({ data, context }) => {
 		if (!data.taskId || data.taskId.trim().length === 0) {
 			throw new UploadError({ message: "Missing taskId" });
@@ -590,14 +598,14 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 		return runServerEffect(runnable);
 	});
 
-interface AbortBookUploadInput {
-	taskId: string;
-	reason?: string;
-}
+const AbortBookUploadInput = Schema.Struct({
+	taskId: Schema.NonEmptyString,
+	reason: Schema.optional(Schema.String.pipe(Schema.maxLength(500))),
+});
 
 export const abortBookUploadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: AbortBookUploadInput) => input)
+	.inputValidator(validateInput(AbortBookUploadInput))
 	.handler(async ({ data, context }) => {
 		if (!data.taskId || data.taskId.trim().length === 0) {
 			throw new UploadError({ message: "Missing taskId" });

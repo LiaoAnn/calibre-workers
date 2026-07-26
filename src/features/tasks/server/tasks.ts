@@ -1,12 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import * as schema from "#/shared/db/schema";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import { runServerEffect } from "#/shared/server/runServerEffect";
+import { validateInput } from "#/shared/server/validateInput";
 
-type TaskType = "upload" | "conversion" | "metadata";
+const TaskTypeSchema = Schema.Literal("upload", "conversion", "metadata");
+type TaskType = typeof TaskTypeSchema.Type;
 export type TaskStatus = "pending" | "processing" | "success" | "failed";
 
 export interface Task {
@@ -22,13 +24,13 @@ export interface Task {
 	updatedAt: number;
 }
 
-interface GetTasksInput {
-	limit?: number;
-}
+const GetTasksInput = Schema.Struct({
+	limit: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
+});
 
 export const getUploadTasksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: GetTasksInput) => input)
+	.inputValidator(validateInput(GetTasksInput))
 	.handler(async ({ data, context }) => {
 		const limit = data.limit ?? 10;
 		const userId = context.session.user.id;
@@ -66,7 +68,7 @@ export const getConversionTasksServerFn = createServerFn({
 	method: "GET",
 })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: GetTasksInput) => input)
+	.inputValidator(validateInput(GetTasksInput))
 	.handler(async ({ data }) => {
 		const limit = data.limit ?? 10;
 
@@ -107,7 +109,7 @@ export const getMetadataTasksServerFn = createServerFn({
 	method: "GET",
 })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: GetTasksInput) => input)
+	.inputValidator(validateInput(GetTasksInput))
 	.handler(async ({ data, context }) => {
 		const limit = data.limit ?? 10;
 		const userId = context.session.user.id;
@@ -145,14 +147,14 @@ export const getMetadataTasksServerFn = createServerFn({
 		return runServerEffect(runnable);
 	});
 
-interface MarkTaskAsReadInput {
-	taskId: string;
-	taskType: TaskType;
-}
+const MarkTaskAsReadInput = Schema.Struct({
+	taskId: Schema.NonEmptyString,
+	taskType: TaskTypeSchema,
+});
 
 export const markTaskAsReadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: MarkTaskAsReadInput) => input)
+	.inputValidator(validateInput(MarkTaskAsReadInput))
 	.handler(async ({ data, context }) => {
 		const userId = context.session.user.id;
 
@@ -192,13 +194,15 @@ export const markTaskAsReadServerFn = createServerFn({ method: "POST" })
 		return runServerEffect(runnable);
 	});
 
-interface MarkTasksAsReadInput {
-	taskIds: { id: string; type: TaskType }[];
-}
+const MarkTasksAsReadInput = Schema.Struct({
+	taskIds: Schema.Array(
+		Schema.Struct({ id: Schema.NonEmptyString, type: TaskTypeSchema }),
+	),
+});
 
 export const markTasksAsReadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: MarkTasksAsReadInput) => input)
+	.inputValidator(validateInput(MarkTasksAsReadInput))
 	.handler(async ({ data, context }) => {
 		const userId = context.session.user.id;
 

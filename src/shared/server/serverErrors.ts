@@ -7,6 +7,26 @@
  * and separate from the response side-effect makes it directly testable.
  */
 
+/**
+ * Error surfaced to a TanStack server function client.
+ *
+ * Server functions serialise a thrown error's `message`, which is what the
+ * existing `useMutation` `onError` handlers already read. Carrying `status` and
+ * `tag` alongside it lets callers branch on the kind of failure instead of
+ * matching on message text.
+ */
+export class ServerFnError extends Error {
+	readonly status: number;
+	readonly tag: string;
+
+	constructor(status: number, message: string, tag: string) {
+		super(message);
+		this.name = "ServerFnError";
+		this.status = status;
+		this.tag = tag;
+	}
+}
+
 export interface HttpError {
 	readonly status: number;
 	readonly message: string;

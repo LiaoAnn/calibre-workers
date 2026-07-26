@@ -4,27 +4,10 @@ import { setResponseStatus } from "@tanstack/react-start/server";
 import { Cause, Effect, Exit } from "effect";
 import type { AppServices } from "#/shared/layers/AppLayer";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
-import { httpErrorForTaggedError } from "#/shared/server/serverErrors";
-
-/**
- * Error surfaced to a TanStack server function client.
- *
- * Server functions serialise a thrown error's `message`, which is what the
- * existing `useMutation` `onError` handlers already read. Carrying `status` and
- * `_tag` alongside it lets callers branch on the kind of failure instead of
- * matching on message text.
- */
-class ServerFnError extends Error {
-	readonly status: number;
-	readonly tag: string;
-
-	constructor(status: number, message: string, tag: string) {
-		super(message);
-		this.name = "ServerFnError";
-		this.status = status;
-		this.tag = tag;
-	}
-}
+import {
+	httpErrorForTaggedError,
+	ServerFnError,
+} from "#/shared/server/serverErrors";
 
 const isTagged = (value: unknown): value is { readonly _tag: string } =>
 	typeof value === "object" &&

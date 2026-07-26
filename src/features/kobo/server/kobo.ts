@@ -1,11 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
+import { Schema } from "effect";
 import { KoboService } from "#/features/kobo/services/KoboService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import { runServerEffect } from "#/shared/server/runServerEffect";
+import { validateInput } from "#/shared/server/validateInput";
 
-interface RevokeKoboTokenInput {
-	tokenId?: string;
-}
+// The whole payload is optional: revoking without a token id revokes all of the
+// caller's tokens.
+const RevokeKoboTokenInput = Schema.UndefinedOr(
+	Schema.Struct({ tokenId: Schema.optional(Schema.String) }),
+);
 
 export const getKoboTokensServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
@@ -25,7 +29,7 @@ export const createKoboTokenServerFn = createServerFn({ method: "POST" })
 
 export const revokeKoboTokenServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: RevokeKoboTokenInput | undefined) => input)
+	.inputValidator(validateInput(RevokeKoboTokenInput))
 	.handler(async ({ context, data }) => {
 		return runServerEffect(
 			KoboService.revokeKoboAuthToken({
