@@ -52,10 +52,10 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/sync")({
 								);
 
 								if (Either.isLeft(enqueueResult)) {
-									console.error("Failed to enqueue Kobo sync conversion jobs", {
-										jobIds,
-										error: enqueueResult.left,
-									});
+									yield* Effect.logError(
+										"failed to enqueue Kobo sync conversion jobs",
+										{ jobIds, error: enqueueResult.left },
+									);
 								}
 							}
 						}

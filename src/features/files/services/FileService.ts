@@ -62,6 +62,10 @@ interface GetBookFileRangeInput {
 	range: R2Range;
 }
 
+// Best-effort R2 cleanup for abandoned uploads; bounded so a large sweep
+// cannot fan out into hundreds of simultaneous bucket calls.
+const MAX_CONCURRENT_CLEANUPS = 8;
+
 interface FailStaleUploadTasksInput {
 	staleBefore: Date;
 	errorMessage: string;
@@ -93,7 +97,10 @@ export class FileService extends Effect.Service<FileService>()("FileService", {
 							operation: "file.deleteAfterSizeMismatch",
 							cause,
 						}),
-				}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+				}).pipe(
+					Effect.tapErrorCause(Effect.logError),
+					Effect.catchAll(() => Effect.succeed(undefined)),
+				);
 
 				return yield* Effect.fail(
 					new StorageError({
@@ -267,16 +274,20 @@ export class FileService extends Effect.Service<FileService>()("FileService", {
 								yield* abortMultipartUpload({
 									r2Key: task.stagingR2Key,
 									uploadId: task.multipartUploadId,
-								}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+								}).pipe(
+									Effect.tapErrorCause(Effect.logError),
+									Effect.catchAll(() => Effect.succeed(undefined)),
+								);
 							}
 
 							if (task.stagingR2Key) {
 								yield* deleteBookFile(task.stagingR2Key).pipe(
+									Effect.tapErrorCause(Effect.logError),
 									Effect.catchAll(() => Effect.succeed(undefined)),
 								);
 							}
 						}),
-					{ concurrency: "unbounded", discard: true },
+					{ concurrency: MAX_CONCURRENT_CLEANUPS, discard: true },
 				);
 
 				const staleIds = staleTasks.map((task) => task.id);

@@ -15,6 +15,13 @@ export interface MetadataQueueMessage {
 
 const METADATA_TASK_TIMEOUT = Duration.minutes(10);
 
+// One message per fibre against D1 and the converter container, both of which
+// have their own limits; an unbounded batch could exceed either.
+const MAX_CONCURRENT_MESSAGES = 4;
+
+// Files within one book are converted in parallel; keep the fan-out modest.
+const MAX_CONCURRENT_FILES = 4;
+
 function mimeTypeForFormat(format: string) {
 	switch (format.toLowerCase()) {
 		case "epub":
@@ -97,6 +104,7 @@ const runMetadataSyncForFile = ({
 				status: "failed",
 				onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
 			}).pipe(
+				Effect.tapErrorCause(Effect.logError),
 				Effect.catchAll(() => Effect.void),
 				Effect.zipRight(Effect.failCause(cause)),
 			),
@@ -163,7 +171,7 @@ const runMetadataSync = (jobId: string) =>
 					metadataForContainer,
 					cover,
 				}).pipe(Effect.either),
-			{ concurrency: "unbounded" },
+			{ concurrency: MAX_CONCURRENT_FILES },
 		);
 
 		const failedCount = results.filter(Either.isLeft).length;
@@ -193,7 +201,10 @@ const settleMetadataFailure = ({
 		yield* BookService.updateMetadataJobStatus(jobId, {
 			status: "failed",
 			errorMessage,
-		}).pipe(Effect.catchAll(() => Effect.void));
+		}).pipe(
+			Effect.tapErrorCause(Effect.logError),
+			Effect.catchAll(() => Effect.void),
+		);
 
 		const jobResult = yield* Effect.either(BookService.getMetadataJob(jobId));
 		if (Either.isRight(jobResult)) {
@@ -201,7 +212,10 @@ const settleMetadataFailure = ({
 				bookId: jobResult.right.bookId,
 				status: "failed",
 				onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
-			}).pipe(Effect.catchAll(() => Effect.void));
+			}).pipe(
+				Effect.tapErrorCause(Effect.logError),
+				Effect.catchAll(() => Effect.void),
+			);
 		}
 
 		yield* Effect.sync(() => {
@@ -251,7 +265,7 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 
 	await QueueRuntime.runPromise(
 		Effect.forEach(batch.messages, processMessage, {
-			concurrency: "unbounded",
+			concurrency: MAX_CONCURRENT_MESSAGES,
 			discard: true,
 		}),
 	);

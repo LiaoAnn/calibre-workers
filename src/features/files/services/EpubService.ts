@@ -708,7 +708,10 @@ export class EpubService extends Effect.Service<EpubService>()("EpubService", {
 				}
 
 				return undefined;
-			}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+			}).pipe(
+				Effect.tapErrorCause(Effect.logError),
+				Effect.catchAll(() => Effect.succeed(undefined)),
+			);
 
 			return {
 				metadata,

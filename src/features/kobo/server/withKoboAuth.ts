@@ -277,7 +277,10 @@ const logKoboApi = async ({
 			}),
 		);
 	} catch (error) {
-		console.error("Failed to persist Kobo API log", error);
+		// Logging must never break the response the device is waiting on.
+		await ServerRuntime.runPromise(
+			Effect.logError("failed to persist Kobo API log", error),
+		);
 	}
 };
 
@@ -342,7 +345,9 @@ export const withKoboAuth = async <
 		});
 		return output.response;
 	} catch (error) {
-		console.error("Unhandled Kobo API handler error", error);
+		await ServerRuntime.runPromise(
+			Effect.logError("unhandled Kobo API handler error", error),
+		);
 		const response = koboInternalServerErrorResponse();
 		await logKoboApi({
 			request: input.request,

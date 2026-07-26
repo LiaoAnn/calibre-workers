@@ -23,6 +23,9 @@ import { DatabaseContext, DatabaseLive } from "#/shared/layers/DatabaseLayer";
 const SYNC_TOKEN_HEADER = "x-kobo-synctoken";
 const SYNC_TOKEN_VERSION = "1-1-0";
 const SYNC_ITEM_LIMIT = 100;
+// Kepub conversion jobs created during a sync; bounded to keep one device sync
+// from issuing an unbounded burst of D1 writes.
+const MAX_CONCURRENT_CONVERSION_JOBS = 8;
 const KOBO_DEFAULT_CATEGORY_ID = "00000000-0000-0000-0000-000000000001";
 
 // Kobo sync is a hybrid of local catalog + optional upstream store pass-through.
@@ -1253,7 +1256,7 @@ export class KoboService extends Effect.Service<KoboService>()("KoboService", {
 						sourceFileId: request.sourceFileId,
 						targetFormat: "kepub",
 					}),
-				{ concurrency: "unbounded" },
+				{ concurrency: MAX_CONCURRENT_CONVERSION_JOBS },
 			);
 
 			return createdJobs.map((job) => job.jobId);

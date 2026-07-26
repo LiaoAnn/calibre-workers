@@ -417,23 +417,27 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 				Effect.gen(function* () {
 					if (createdResources.fileR2Key) {
 						yield* FileService.deleteBookFile(createdResources.fileR2Key).pipe(
+							Effect.tapErrorCause(Effect.logError),
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
 
 					if (createdResources.coverR2Key) {
 						yield* FileService.deleteBookFile(createdResources.coverR2Key).pipe(
+							Effect.tapErrorCause(Effect.logError),
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
 
 					if (createdResources.bookId) {
 						yield* BookService.deleteBook(createdResources.bookId).pipe(
+							Effect.tapErrorCause(Effect.logError),
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
 
 					yield* FileService.deleteBookFile(stagingR2Key).pipe(
+						Effect.tapErrorCause(Effect.logError),
 						Effect.catchAll(() => Effect.succeed(undefined)),
 					);
 				});
@@ -556,7 +560,10 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 							yield* FileService.abortMultipartUpload({
 								r2Key: stagingR2Key,
 								uploadId: multipartUploadId,
-							}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+							}).pipe(
+								Effect.tapErrorCause(Effect.logError),
+								Effect.catchAll(() => Effect.succeed(undefined)),
+							);
 						}
 
 						const message =
@@ -624,11 +631,15 @@ export const abortBookUploadServerFn = createServerFn({ method: "POST" })
 				yield* FileService.abortMultipartUpload({
 					r2Key: task.stagingR2Key,
 					uploadId: task.multipartUploadId,
-				}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+				}).pipe(
+					Effect.tapErrorCause(Effect.logError),
+					Effect.catchAll(() => Effect.succeed(undefined)),
+				);
 			}
 
 			if (task.stagingR2Key) {
 				yield* FileService.deleteBookFile(task.stagingR2Key).pipe(
+					Effect.tapErrorCause(Effect.logError),
 					Effect.catchAll(() => Effect.succeed(undefined)),
 				);
 			}

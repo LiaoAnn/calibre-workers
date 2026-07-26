@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { Cause, Duration, Effect, Exit } from "effect";
+import { Cause, Data, Duration, Effect, Exit } from "effect";
 import { BookService } from "#/features/books/services/BookService";
 import { ConversionService } from "#/features/conversion/services/ConversionService";
 import { FileService } from "#/features/files/services/FileService";
@@ -15,6 +15,22 @@ export interface ConversionQueueMessage {
 }
 
 const CONVERSION_TASK_TIMEOUT = Duration.minutes(10);
+
+// One message per fibre against D1 and the converter container, both of which
+// have their own limits; an unbounded batch could exceed either.
+const MAX_CONCURRENT_MESSAGES = 4;
+
+class UnsupportedTargetFormat extends Data.TaggedError(
+	"UnsupportedTargetFormat",
+)<{
+	readonly jobId: string;
+	readonly targetFormat: string;
+}> {}
+
+class CoverReadFailed extends Data.TaggedError("CoverReadFailed")<{
+	readonly jobId: string;
+	readonly cause: unknown;
+}> {}
 
 const isBookFileFormat = (format: string): format is BookFileFormat =>
 	format === "epub" ||
@@ -46,7 +62,10 @@ const runConversionJob = (jobId: string) =>
 
 		if (!isBookFileFormat(job.targetFormat)) {
 			return yield* Effect.fail(
-				new Error(`Unsupported target format: ${job.targetFormat}`),
+				new UnsupportedTargetFormat({
+					jobId,
+					targetFormat: job.targetFormat,
+				}),
 			);
 		}
 
@@ -74,10 +93,7 @@ const runConversionJob = (jobId: string) =>
 					// Covers are small (< 5 MB) — safe to buffer in Worker memory
 					const coverBytes = yield* Effect.tryPromise({
 						try: () => coverObject.arrayBuffer(),
-						catch: (cause) =>
-							new Error(
-								`cover arrayBuffer failed for job ${jobId}: ${String(cause)}`,
-							),
+						catch: (cause) => new CoverReadFailed({ jobId, cause }),
 					});
 
 					return {
@@ -150,7 +166,10 @@ const settleConversionFailure = ({
 		yield* ConversionService.updateConversionJobStatus(jobId, {
 			status: "failed",
 			errorMessage,
-		}).pipe(Effect.catchAll(() => Effect.void));
+		}).pipe(
+			Effect.tapErrorCause(Effect.logError),
+			Effect.catchAll(() => Effect.void),
+		);
 
 		yield* Effect.sync(() => {
 			message.ack();
@@ -201,7 +220,7 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 
 	await QueueRuntime.runPromise(
 		Effect.forEach(batch.messages, processMessage, {
-			concurrency: "unbounded",
+			concurrency: MAX_CONCURRENT_MESSAGES,
 			discard: true,
 		}),
 	);

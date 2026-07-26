@@ -5,6 +5,7 @@ import { BookService } from "#/features/books/services/BookService";
 import { ConversionService } from "#/features/conversion/services/ConversionService";
 import { FileService } from "#/features/files/services/FileService";
 import { QueueRuntime } from "#/shared/layers/AppRuntime";
+import { staleBefore } from "#/shared/lib/staleWindow";
 
 const STALE_TASK_WINDOW = Duration.minutes(45);
 const STALE_CONVERSION_ERROR_MESSAGE =
@@ -19,37 +20,35 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 	_env,
 	_ctx,
 ) => {
-	const now = Date.now();
-	const staleBeforeMs = now - Duration.toMillis(STALE_TASK_WINDOW);
-	const staleBefore = new Date(staleBeforeMs);
-
 	const runnable = Effect.gen(function* () {
+		const cutoff = yield* staleBefore(STALE_TASK_WINDOW);
+
+		// Three independent sweeps over different tables; three is the whole
+		// population, so the bound is the batch itself.
 		const [conversionResult, metadataResult, uploadResult] = yield* Effect.all(
 			[
 				ConversionService.failStaleConversionJobs({
-					staleBefore,
+					staleBefore: cutoff,
 					errorMessage: STALE_CONVERSION_ERROR_MESSAGE,
 				}),
 				BookService.failStaleMetadataTasks({
-					staleBefore,
+					staleBefore: cutoff,
 					errorMessage: STALE_METADATA_ERROR_MESSAGE,
 				}),
 				FileService.failStaleUploadTasks({
-					staleBefore,
+					staleBefore: cutoff,
 					errorMessage: STALE_UPLOAD_ERROR_MESSAGE,
 				}),
 			],
-			{ concurrency: "unbounded" },
+			{ concurrency: 3 },
 		);
 
-		yield* Effect.sync(() => {
-			console.log("[scheduled] stale task sweep completed", {
-				cron: controller.cron,
-				staleBeforeMs,
-				conversionAffected: conversionResult.affectedCount,
-				metadataAffected: metadataResult.affectedCount,
-				uploadAffected: uploadResult.affectedCount,
-			});
+		yield* Effect.logInfo("stale task sweep completed", {
+			cron: controller.cron,
+			staleBeforeMs: cutoff.getTime(),
+			conversionAffected: conversionResult.affectedCount,
+			metadataAffected: metadataResult.affectedCount,
+			uploadAffected: uploadResult.affectedCount,
 		});
 	});
 
