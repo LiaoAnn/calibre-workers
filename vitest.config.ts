@@ -3,7 +3,6 @@ import {
 	cloudflareTest,
 	readD1Migrations,
 } from "@cloudflare/vitest-pool-workers";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vitest/config";
 
 // Standalone Vitest config for integration tests. Intentionally separate from
@@ -16,8 +15,10 @@ import { defineConfig } from "vitest/config";
 // wrapper, and `isolatedStorage` / `singleWorker` are gone. Per-test isolation
 // is now explicit — see `src/shared/test/apply-migrations.ts`.
 export default defineConfig({
+	resolve: {
+		tsconfigPaths: true,
+	},
 	plugins: [
-		tsconfigPaths(),
 		cloudflareTest(async () => ({
 			miniflare: {
 				compatibilityDate: "2025-09-02",

@@ -78,7 +78,6 @@
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
-    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.10",
     "wrangler": "^4.114.0"
   },
