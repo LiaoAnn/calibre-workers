@@ -87,7 +87,7 @@ const getOwnedShelf = ({
 		const membership = membershipRows[0];
 
 		// TODO(shelves): expand permission matrix (owner/editor/viewer) per action.
-		if (!membership || membership.role !== "owner") {
+		if (membership?.role !== "owner") {
 			return yield* Effect.fail(new ShelfAccessDenied({ shelfId, userId }));
 		}
 
