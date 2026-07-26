@@ -7,8 +7,8 @@ import {
 	KoboEncodingFailure,
 	koboJsonResponse,
 	proxyKoboHandlerOutput,
-	withKoboAuth,
 } from "#/features/kobo/lib/kobo.server";
+import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
 
 type RequestLike = Pick<
 	Request,

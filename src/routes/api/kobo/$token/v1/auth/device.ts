@@ -7,8 +7,8 @@ import {
 	koboJsonResponse,
 	parseDeviceAuthBody,
 	proxyKoboHandlerOutput,
-	withKoboAuth,
 } from "#/features/kobo/lib/kobo.server";
+import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/auth/device")({
 	server: {

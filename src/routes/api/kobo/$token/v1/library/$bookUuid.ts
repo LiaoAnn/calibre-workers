@@ -3,8 +3,8 @@ import { Effect } from "effect";
 import {
 	KoboBookNotFound,
 	resolveKoboLocalOrProxy,
-	withKoboAuth,
 } from "#/features/kobo/lib/kobo.server";
+import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
 import { setArchivedBookByUuid } from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/$bookUuid")({

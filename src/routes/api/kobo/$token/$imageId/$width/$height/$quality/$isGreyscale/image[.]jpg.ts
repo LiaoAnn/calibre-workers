@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect, Either } from "effect";
 import { getBookFile } from "#/features/files/services/FileService";
-import { withKoboAuth } from "#/features/kobo/lib/kobo.server";
+import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
 import { getBookByUuid } from "#/features/kobo/services/KoboService";
 import { r2Keys } from "#/shared/lib/r2-keys";
 

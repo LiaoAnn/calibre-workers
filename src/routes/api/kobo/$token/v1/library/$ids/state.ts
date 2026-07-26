@@ -8,8 +8,8 @@ import {
 	KoboMalformedRequest,
 	koboJsonResponse,
 	resolveKoboLocalOrProxy,
-	withKoboAuth,
 } from "#/features/kobo/lib/kobo.server";
+import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
 import {
 	getReadingStateResponseByBookUuid,
 	updateReadingStateByBookUuid,
