@@ -54,12 +54,13 @@ Code is grouped by **feature**, not by technical layer:
 ```
 src/
   features/<feature>/   books, files, conversion, shelves, kobo, tasks, users
-    services/           Effect business logic (+ colocated *.test.ts)
+    services/           Effect.Service business logic
+    tests/              integration tests for that slice's services
     server/             createServerFn handlers (imported by routes)
     hooks/              React hooks
     components/         React components
     queue/  lib/        feature queue handlers / feature-local helpers
-  shared/               cross-cutting infra: layers, db, auth, lib, integrations, test
+  shared/               cross-cutting infra: layers, server, queue, db, auth, lib, integrations, test
   components/           app shell (Header, ThemeToggle) + ui/ (shadcn design system)
   routes/               TanStack file-based routes (must stay here) — thin, import from features
   index.ts scheduled.ts router.tsx queue/index.ts   root wiring
@@ -86,17 +87,36 @@ File-based routing via TanStack Router. Route files in `src/routes/` auto-genera
 
 ### Effect service layer
 
-Business logic lives in `src/features/<feature>/services/PascalCase.ts` and uses Effect for async + typed errors. Services receive dependencies (DB, R2) via Effect context.
+Business logic lives in `src/features/<feature>/services/PascalCase.ts`. Each file exports one `Effect.Service` class with `accessors: true` and explicit `dependencies`, so call sites read `BookService.getBookById(id)`. Wrap each method in `Effect.fn("Service.method")` — that is what produces spans and call-site stack traces.
+
+Keep pure helpers (header parsing, encoders, formatters) as plain module-level exports next to the service, not as service methods.
 
 Layers are composed in `src/shared/layers/`:
 - `DatabaseLive` — Drizzle + `@effect/sql-d1`
 - `R2Live` — Cloudflare R2 bucket
 - `ConverterContainerLive` — Durable Object proxy for converter
 
-`AppLayer = merge(DatabaseLive, R2Live)` — used by most server functions.
-`AppLayerWithContainer = merge(DatabaseLive, R2Live, ConverterContainerLive)` — used by the queue handler.
+`AppLayer` merges `DatabaseLive`, `R2Live` and every service's `.Default`.
+`AppLayerWithContainer = merge(AppLayer, ConverterContainerLive)` — queue and cron only.
+`AppServices` is the derived context type; boundaries that accept a caller's Effect should require it rather than naming individual tags.
 
-Pattern: server functions call `Effect.runPromise(someService(...).pipe(Effect.provide(AppLayer)))`.
+**Never add `ConverterContainerLive` to a service's `dependencies`** — tests substitute a fake for that tag.
+
+### Runtime boundaries
+
+Layer memoization only holds within one `Effect.provide` build, so never call `Effect.provide(AppLayer)` per request. `src/shared/layers/AppRuntime.ts` exports two module-scope `ManagedRuntime`s:
+- `ServerRuntime` — SSR, server functions, API routes
+- `QueueRuntime` — queue consumers and the cron handler
+
+Server functions go through `runServerEffect` (`src/shared/server/`), which runs on `ServerRuntime` and maps tagged errors to HTTP status via `serverErrors.ts`. Add a tag there when you add a domain error; anything unmapped becomes a logged 500 with a generic message.
+
+Route **loaders** are different: a loader that throws renders the error boundary and answers 500 regardless of status, so translate absence into router `notFound()` (see `getBookByIdServerFn`, `getShelfBooksServerFn`).
+
+Server function input is decoded with `validateInput(schema)` (`src/shared/server/`), not an identity cast. Where a shape belongs to a service, define the Schema in the service and derive the TypeScript type from it.
+
+Queue handlers decide ack/retry with `queueOutcomeForExit` (`src/shared/queue/`): expected failures and timeouts are acked and recorded as failed jobs; defects are left unacked so Cloudflare redelivers them into the DLQ. Never blanket-ack.
+
+Use `Effect.log*` for diagnostics — there should be no `console.*` in `src/`. Best-effort work that swallows its error must still `tapErrorCause(Effect.logError)` first. Read time from `Clock` (see `shared/lib/staleWindow.ts`), not `Date.now()`. Give every `Effect.forEach` an explicit concurrency bound.
 
 ### Database
 
@@ -108,6 +128,8 @@ Kobo-specific tables: `kobo_auth_tokens`, `kobo_synced_books`, `kobo_reading_sta
 
 Auth tables (managed by Better Auth): `user`, `session`, `account`, `verification`.
 
+Better Auth's `drizzleAdapter` needs a plain drizzle client and cannot go through `DatabaseContext`. That client is scoped to `src/shared/auth/auth.ts` on purpose — do not reintroduce a shared general-purpose drizzle instance. All other database access goes through a service.
+
 ### Background jobs
 
 Two queues:
@@ -116,7 +138,12 @@ Two queues:
 
 ### Kobo sync
 
-`src/features/kobo/` (`server/kobo.ts` + `services/KoboService.ts` + `lib/kobo.server.ts`) implements the Kobo sync API. Kobo devices send requests with double slashes and non-standard `accept` headers; `src/index.ts` normalizes these before they reach TanStack Start.
+`src/features/kobo/` implements the Kobo sync API. Kobo devices send requests with double slashes and non-standard `accept` headers; `src/index.ts` normalizes these before they reach TanStack Start.
+
+- `lib/kobo.server.ts` — pure protocol code: error classes, Schema encoders, response builders, body parsers. **Must not import a runtime or `AppLayer`**; `KoboService` imports this module, so a runtime import here would create a cycle.
+- `services/KoboService.ts` — sync, metadata, reading state, tags.
+- `server/withKoboAuth.ts` — the request boundary: auth-token resolution, API logging, and the wrapper every Kobo route uses.
+- `server/kobo.ts` — token management server functions for the settings page.
 
 ### Go converter
 
@@ -126,8 +153,10 @@ Two queues:
 
 `pnpm test` runs Vitest under `@cloudflare/vitest-pool-workers` (config: `vitest.config.ts`), executing tests inside `workerd` with real local Miniflare bindings (D1 + R2 + queues). Because services read bindings via `env` from `cloudflare:workers`, the production Effect layers (`AppLayer`) run unchanged in tests.
 
-- Tests are colocated as `src/features/<feature>/services/*.test.ts`.
-- `src/shared/test/helpers.ts` exposes `runTest` / `runTestExit` (provide `AppLayer` + a fake converter layer) plus `seedUser`/`seedBook`/`seedBookFile`.
+- Service tests live in `src/features/<feature>/tests/*.test.ts`; shared infrastructure tests live in `src/shared/tests/`.
+- `src/shared/test/helpers.ts` exposes `runTest` / `runTestExit` (provide `AppLayer` + a fake converter layer) plus `seedUser`/`seedBook`/`seedBookFile`. These deliberately use per-call `Effect.provide`, not a shared `ManagedRuntime`: `isolatedStorage` tears storage down between tests, and a D1 client outliving that boundary intermittently stalls a later test.
+- Error assertions match tag names as strings (`toContain("BookNotFound")`), so **renaming a tagged error silently breaks tests** — check before renaming.
+- The suite has a known intermittent timeout that predates the Effect refactor and reproduces on an unmodified `main`; a single red run is not necessarily your change.
 - `src/shared/test/apply-migrations.ts` applies `migrations/` to the local D1 before the suite; `isolatedStorage` resets D1/R2 per test.
 - Bindings are configured explicitly in `vitest.config.ts` (not imported from `wrangler.jsonc`) so Miniflare never tries to build the Docker-backed `ConverterContainer`. Container-dependent paths use the fake converter layer.
 
