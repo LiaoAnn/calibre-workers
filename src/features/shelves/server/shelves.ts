@@ -64,7 +64,7 @@ export const listShelvesServerFn = createServerFn({ method: "GET" })
 
 export const listBookShelfIdsServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(BookShelfIdsInput))
+	.validator(validateInput(BookShelfIdsInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.listBookShelfIds({
@@ -76,7 +76,7 @@ export const listBookShelfIdsServerFn = createServerFn({ method: "GET" })
 
 export const createShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(CreateShelfInput))
+	.validator(validateInput(CreateShelfInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.createShelf({
@@ -88,7 +88,7 @@ export const createShelfServerFn = createServerFn({ method: "POST" })
 
 export const getShelfBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(ShelfBooksInput))
+	.validator(validateInput(ShelfBooksInput))
 	.handler(async ({ data, context }) => {
 		// This one backs a route loader. A loader that throws an ordinary error
 		// renders the error boundary and answers 500, so an absent or inaccessible
@@ -117,7 +117,7 @@ export const getShelfBooksServerFn = createServerFn({ method: "GET" })
 
 export const updateShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(UpdateShelfInput))
+	.validator(validateInput(UpdateShelfInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.updateShelf({
@@ -130,7 +130,7 @@ export const updateShelfServerFn = createServerFn({ method: "POST" })
 
 export const deleteShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(ShelfByIdInput))
+	.validator(validateInput(ShelfByIdInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.deleteShelf({
@@ -142,7 +142,7 @@ export const deleteShelfServerFn = createServerFn({ method: "POST" })
 
 export const addBooksToShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(AddBooksInput))
+	.validator(validateInput(AddBooksInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.addBooksToShelf({
@@ -155,7 +155,7 @@ export const addBooksToShelfServerFn = createServerFn({ method: "POST" })
 
 export const removeBookFromShelfServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(RemoveBookInput))
+	.validator(validateInput(RemoveBookInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.removeBookFromShelf({
@@ -180,7 +180,7 @@ export const listShelfKoboSyncSettingsServerFn = createServerFn({
 
 export const setShelfKoboSyncServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(SetShelfKoboSyncInput))
+	.validator(validateInput(SetShelfKoboSyncInput))
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
 			ShelfService.setShelfKoboSync({

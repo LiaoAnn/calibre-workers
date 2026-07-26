@@ -38,7 +38,7 @@ export const getUsersServerFn = createServerFn({ method: "GET" })
 
 export const createManagedUserServerFn = createServerFn({ method: "POST" })
 	.middleware([adminMiddleware])
-	.inputValidator(validateInput(CreateManagedUserInput))
+	.validator(validateInput(CreateManagedUserInput))
 	.handler(async ({ data }) => {
 		const role = data.role ?? "user";
 		const status = data.status ?? "active";
@@ -70,7 +70,7 @@ export const createManagedUserServerFn = createServerFn({ method: "POST" })
 
 export const updateUserServerFn = createServerFn({ method: "POST" })
 	.middleware([adminMiddleware])
-	.inputValidator(validateInput(UpdateUserInput))
+	.validator(validateInput(UpdateUserInput))
 	.handler(async ({ data, context }) => {
 		return runServerEffect(
 			UserService.updateUser({
@@ -84,7 +84,7 @@ export const updateUserServerFn = createServerFn({ method: "POST" })
 
 export const deleteUserServerFn = createServerFn({ method: "POST" })
 	.middleware([adminMiddleware])
-	.inputValidator(validateInput(DeleteUserInput))
+	.validator(validateInput(DeleteUserInput))
 	.handler(async ({ data, context }) => {
 		return runServerEffect(
 			UserService.deleteUser({

@@ -35,7 +35,7 @@ const UpdateBookServerInput = Schema.Struct({
 
 export const listBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(ListBooksServerInput))
+	.validator(validateInput(ListBooksServerInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			BookService.listBooks({
@@ -48,7 +48,7 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 
 export const getBookByIdServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(GetBookByIdServerInput))
+	.validator(validateInput(GetBookByIdServerInput))
 	.handler(async ({ data }) => {
 		const book = await runServerEffect(
 			BookService.getBookById(data.bookId).pipe(
@@ -67,7 +67,7 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 
 export const updateBookServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(UpdateBookServerInput))
+	.validator(validateInput(UpdateBookServerInput))
 	.handler(async ({ data, context }) => {
 		const { coverTempR2Key, ...bookInput } = data;
 		const userId = context.session.user.id;

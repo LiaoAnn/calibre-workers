@@ -14,7 +14,7 @@ const TriggerConversionInput = Schema.Struct({
 
 export const triggerConversionServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(TriggerConversionInput))
+	.validator(validateInput(TriggerConversionInput))
 	.handler(async ({ data }) => {
 		const { jobId } = await runServerEffect(
 			ConversionService.createConversionJob({

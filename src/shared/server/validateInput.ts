@@ -2,7 +2,7 @@ import { Either, ParseResult, Schema } from "effect";
 import { ServerFnError } from "#/shared/server/serverErrors";
 
 /**
- * Build a `createServerFn().inputValidator(...)` from a Schema.
+ * Build a `createServerFn().validator(...)` from a Schema.
  *
  * Every server function previously used `(input: T) => input`, an identity cast
  * that told TypeScript a shape it never checked. Anything a client sent reached

@@ -30,7 +30,7 @@ const GetTasksInput = Schema.Struct({
 
 export const getUploadTasksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(GetTasksInput))
+	.validator(validateInput(GetTasksInput))
 	.handler(async ({ data, context }) => {
 		const limit = data.limit ?? 10;
 		const userId = context.session.user.id;
@@ -68,7 +68,7 @@ export const getConversionTasksServerFn = createServerFn({
 	method: "GET",
 })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(GetTasksInput))
+	.validator(validateInput(GetTasksInput))
 	.handler(async ({ data }) => {
 		const limit = data.limit ?? 10;
 
@@ -109,7 +109,7 @@ export const getMetadataTasksServerFn = createServerFn({
 	method: "GET",
 })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(GetTasksInput))
+	.validator(validateInput(GetTasksInput))
 	.handler(async ({ data, context }) => {
 		const limit = data.limit ?? 10;
 		const userId = context.session.user.id;
@@ -154,7 +154,7 @@ const MarkTaskAsReadInput = Schema.Struct({
 
 export const markTaskAsReadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(MarkTaskAsReadInput))
+	.validator(validateInput(MarkTaskAsReadInput))
 	.handler(async ({ data, context }) => {
 		const userId = context.session.user.id;
 
@@ -202,7 +202,7 @@ const MarkTasksAsReadInput = Schema.Struct({
 
 export const markTasksAsReadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(MarkTasksAsReadInput))
+	.validator(validateInput(MarkTasksAsReadInput))
 	.handler(async ({ data, context }) => {
 		const userId = context.session.user.id;
 

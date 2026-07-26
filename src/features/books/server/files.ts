@@ -77,7 +77,7 @@ const coverValidationErrorMessage = (issue: CoverValidationIssue): string => {
 
 export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: FormData) => input)
+	.validator((input: FormData) => input)
 	.handler(async ({ data }) => {
 		const bookId = data.get("bookId");
 		const file = data.get("file");
@@ -134,7 +134,7 @@ export const createBookUploadSessionServerFn = createServerFn({
 	method: "POST",
 })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(CreateBookUploadSessionInput))
+	.validator(validateInput(CreateBookUploadSessionInput))
 	.handler(async ({ data, context }) => {
 		const userId = context.session.user.id;
 		const fileName = data.fileName?.trim();
@@ -235,7 +235,7 @@ export const createBookUploadSessionServerFn = createServerFn({
 
 export const uploadBookPartServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator((input: FormData) => input)
+	.validator((input: FormData) => input)
 	.handler(async ({ data, context }) => {
 		const taskId = data.get("taskId");
 		const partNumberRaw = data.get("partNumber");
@@ -337,7 +337,7 @@ const CompleteBookUploadInput = Schema.Struct({
 
 export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(CompleteBookUploadInput))
+	.validator(validateInput(CompleteBookUploadInput))
 	.handler(async ({ data, context }) => {
 		if (!data.taskId || data.taskId.trim().length === 0) {
 			throw new UploadError({ message: "Missing taskId" });
@@ -605,7 +605,7 @@ const AbortBookUploadInput = Schema.Struct({
 
 export const abortBookUploadServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(AbortBookUploadInput))
+	.validator(validateInput(AbortBookUploadInput))
 	.handler(async ({ data, context }) => {
 		if (!data.taskId || data.taskId.trim().length === 0) {
 			throw new UploadError({ message: "Missing taskId" });

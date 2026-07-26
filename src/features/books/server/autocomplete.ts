@@ -14,7 +14,7 @@ const AutocompleteInput = Schema.Struct({
 });
 
 export const searchAuthorsServerFn = createServerFn({ method: "GET" })
-	.inputValidator(validateInput(AutocompleteInput))
+	.validator(validateInput(AutocompleteInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			AutocompleteService.searchAuthors(data.query, data.limit),
@@ -22,7 +22,7 @@ export const searchAuthorsServerFn = createServerFn({ method: "GET" })
 	});
 
 export const searchTagsServerFn = createServerFn({ method: "GET" })
-	.inputValidator(validateInput(AutocompleteInput))
+	.validator(validateInput(AutocompleteInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			AutocompleteService.searchTags(data.query, data.limit),
@@ -30,7 +30,7 @@ export const searchTagsServerFn = createServerFn({ method: "GET" })
 	});
 
 export const searchSeriesServerFn = createServerFn({ method: "GET" })
-	.inputValidator(validateInput(AutocompleteInput))
+	.validator(validateInput(AutocompleteInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			AutocompleteService.searchSeries(data.query, data.limit),
@@ -38,7 +38,7 @@ export const searchSeriesServerFn = createServerFn({ method: "GET" })
 	});
 
 export const searchPublishersServerFn = createServerFn({ method: "GET" })
-	.inputValidator(validateInput(AutocompleteInput))
+	.validator(validateInput(AutocompleteInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			AutocompleteService.searchPublishers(data.query, data.limit),
@@ -46,7 +46,7 @@ export const searchPublishersServerFn = createServerFn({ method: "GET" })
 	});
 
 export const searchLanguagesServerFn = createServerFn({ method: "GET" })
-	.inputValidator(validateInput(AutocompleteInput))
+	.validator(validateInput(AutocompleteInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			AutocompleteService.searchLanguages(data.query, data.limit),
@@ -54,7 +54,7 @@ export const searchLanguagesServerFn = createServerFn({ method: "GET" })
 	});
 
 export const searchIdentifierTypesServerFn = createServerFn({ method: "GET" })
-	.inputValidator(validateInput(AutocompleteInput))
+	.validator(validateInput(AutocompleteInput))
 	.handler(async ({ data }) => {
 		return runServerEffect(
 			AutocompleteService.searchIdentifierTypes(data.query, data.limit),

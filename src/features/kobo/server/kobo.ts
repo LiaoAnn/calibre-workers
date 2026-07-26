@@ -29,7 +29,7 @@ export const createKoboTokenServerFn = createServerFn({ method: "POST" })
 
 export const revokeKoboTokenServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
-	.inputValidator(validateInput(RevokeKoboTokenInput))
+	.validator(validateInput(RevokeKoboTokenInput))
 	.handler(async ({ context, data }) => {
 		return runServerEffect(
 			KoboService.revokeKoboAuthToken({
