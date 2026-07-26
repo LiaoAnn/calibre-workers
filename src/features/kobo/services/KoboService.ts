@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { Effect } from "effect";
+import { Effect, Either, Schema } from "effect";
 import { ConversionService } from "#/features/conversion/services/ConversionService";
 import {
 	type KoboBookEntitlement,
@@ -93,10 +93,32 @@ const randomToken = () => {
 		.join("");
 };
 
-const decodeSyncTokenPayload = (raw: string): unknown => {
+// Fields stay `Unknown` on purpose: a Kobo device may send a timestamp in the
+// wrong shape, and the field-level fallbacks below should absorb that rather
+// than discarding the whole token. What the schema does enforce is that the
+// payload is an object with an object-shaped `data`, which is what the code
+// below actually relies on.
+const SyncTokenDataSchema = Schema.Struct({
+	raw_kobo_store_token: Schema.optional(Schema.Unknown),
+	books_last_modified: Schema.optional(Schema.Unknown),
+	books_last_created: Schema.optional(Schema.Unknown),
+	archive_last_modified: Schema.optional(Schema.Unknown),
+	reading_state_last_modified: Schema.optional(Schema.Unknown),
+	tags_last_modified: Schema.optional(Schema.Unknown),
+});
+
+const SyncTokenPayloadSchema = Schema.Struct({
+	data: Schema.optional(SyncTokenDataSchema),
+});
+
+const decodeSyncTokenPayload = Schema.decodeUnknownEither(
+	SyncTokenPayloadSchema,
+);
+
+/** Base64 + JSON, both of which throw on malformed device input. */
+const readSyncTokenJson = (raw: string): unknown => {
 	const padded = raw + "=".repeat((4 - (raw.length % 4)) % 4);
-	const jsonText = atob(padded);
-	return JSON.parse(jsonText) as unknown;
+	return JSON.parse(atob(padded));
 };
 
 const getStatusOrDefault = (
@@ -158,38 +180,36 @@ const parseSyncToken = (rawHeader: string | null): KoboSyncToken => {
 		};
 	}
 
+	let payload: unknown;
 	try {
-		const decoded = decodeSyncTokenPayload(rawHeader) as {
-			data?: {
-				raw_kobo_store_token?: string;
-				books_last_modified?: number;
-				books_last_created?: number;
-				archive_last_modified?: number;
-				reading_state_last_modified?: number;
-				tags_last_modified?: number;
-			};
-		};
-		const data = decoded.data;
-		if (!data) {
-			return defaults;
-		}
-
-		return {
-			rawKoboStoreToken:
-				typeof data.raw_kobo_store_token === "string"
-					? data.raw_kobo_store_token
-					: "",
-			booksLastModified: fromEpochSeconds(data.books_last_modified),
-			booksLastCreated: fromEpochSeconds(data.books_last_created),
-			archiveLastModified: fromEpochSeconds(data.archive_last_modified),
-			readingStateLastModified: fromEpochSeconds(
-				data.reading_state_last_modified,
-			),
-			tagsLastModified: fromEpochSeconds(data.tags_last_modified),
-		};
+		payload = readSyncTokenJson(rawHeader);
 	} catch {
 		return defaults;
 	}
+
+	const decoded = decodeSyncTokenPayload(payload);
+	if (Either.isLeft(decoded)) {
+		return defaults;
+	}
+
+	const data = decoded.right.data;
+	if (!data) {
+		return defaults;
+	}
+
+	return {
+		rawKoboStoreToken:
+			typeof data.raw_kobo_store_token === "string"
+				? data.raw_kobo_store_token
+				: "",
+		booksLastModified: fromEpochSeconds(data.books_last_modified),
+		booksLastCreated: fromEpochSeconds(data.books_last_created),
+		archiveLastModified: fromEpochSeconds(data.archive_last_modified),
+		readingStateLastModified: fromEpochSeconds(
+			data.reading_state_last_modified,
+		),
+		tagsLastModified: fromEpochSeconds(data.tags_last_modified),
+	};
 };
 
 // Keep Kobo download path consistent with Calibre-Web's token-scoped download URL.

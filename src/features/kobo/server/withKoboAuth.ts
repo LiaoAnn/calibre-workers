@@ -31,6 +31,8 @@ class KoboAuthTokenNotFound extends Data.TaggedError("KoboAuthTokenNotFound")<{
 
 const parseJsonSafe = (text: string): unknown | undefined => {
 	try {
+		// Narrowing `any` to `unknown`, so the API-log payload cannot be used
+		// without a check. The result is only ever stored, never trusted.
 		return JSON.parse(text) as unknown;
 	} catch {
 		return undefined;
