@@ -9,56 +9,41 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ShelvesRouteImport } from './routes/shelves'
-import { Route as RegisterRouteImport } from './routes/register'
-import { Route as PendingApprovalRouteImport } from './routes/pending-approval'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as PendingApprovalRouteImport } from './routes/pending-approval'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ShelvesRouteImport } from './routes/shelves'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AuthorNameRouteImport } from './routes/author.$name'
+import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
+import { Route as SettingsKoboRouteImport } from './routes/settings/kobo'
 import { Route as ShelvesIndexRouteImport } from './routes/shelves.index'
 import { Route as ShelvesShelfIdRouteImport } from './routes/shelves.$shelfId'
-import { Route as SettingsKoboRouteImport } from './routes/settings/kobo'
-import { Route as BooksBookIdRouteImport } from './routes/books.$bookId'
-import { Route as AuthorNameRouteImport } from './routes/author.$name'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as BooksBookIdEditRouteImport } from './routes/books.$bookId_.edit'
 import { Route as ApiBooksBookIdCoverRouteImport } from './routes/api/books/$bookId/cover'
-import { Route as ApiKoboTokenV1InitializationRouteImport } from './routes/api/kobo/$token/v1/initialization'
-import { Route as ApiKoboTokenV1SplatRouteImport } from './routes/api/kobo/$token/v1/$'
 import { Route as ApiBooksBookIdFilesFileIdRouteImport } from './routes/api/books/$bookId/files/$fileId'
-import { Route as ApiKoboTokenV1LibraryTagsRouteImport } from './routes/api/kobo/$token/v1/library/tags'
-import { Route as ApiKoboTokenV1LibrarySyncRouteImport } from './routes/api/kobo/$token/v1/library/sync'
-import { Route as ApiKoboTokenV1LibraryBookUuidRouteImport } from './routes/api/kobo/$token/v1/library/$bookUuid'
-import { Route as ApiKoboTokenV1AuthRefreshRouteImport } from './routes/api/kobo/$token/v1/auth/refresh'
-import { Route as ApiKoboTokenV1AuthDeviceRouteImport } from './routes/api/kobo/$token/v1/auth/device'
+import { Route as ApiKoboTokenV1SplatRouteImport } from './routes/api/kobo/$token/v1/$'
+import { Route as ApiKoboTokenV1InitializationRouteImport } from './routes/api/kobo/$token/v1/initialization'
 import { Route as ApiKoboTokenDownloadBookIdBookFormatRouteImport } from './routes/api/kobo/$token/download/$bookId/$bookFormat'
-import { Route as ApiKoboTokenV1LibraryTagsTagIdRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId'
-import { Route as ApiKoboTokenV1LibraryIdsStateRouteImport } from './routes/api/kobo/$token/v1/library/$ids/state'
+import { Route as ApiKoboTokenV1AuthDeviceRouteImport } from './routes/api/kobo/$token/v1/auth/device'
+import { Route as ApiKoboTokenV1AuthRefreshRouteImport } from './routes/api/kobo/$token/v1/auth/refresh'
+import { Route as ApiKoboTokenV1LibraryBookUuidRouteImport } from './routes/api/kobo/$token/v1/library/$bookUuid'
+import { Route as ApiKoboTokenV1LibrarySyncRouteImport } from './routes/api/kobo/$token/v1/library/sync'
+import { Route as ApiKoboTokenV1LibraryTagsRouteImport } from './routes/api/kobo/$token/v1/library/tags'
 import { Route as ApiKoboTokenV1LibraryIdsMetadataRouteImport } from './routes/api/kobo/$token/v1/library/$ids/metadata'
-import { Route as ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId/items'
+import { Route as ApiKoboTokenV1LibraryIdsStateRouteImport } from './routes/api/kobo/$token/v1/library/$ids/state'
+import { Route as ApiKoboTokenV1LibraryTagsTagIdRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId'
 import { Route as ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRouteImport } from './routes/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image[.]jpg'
-import { Route as ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId/items/delete'
+import { Route as ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId/items'
 import { Route as ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRouteImport } from './routes/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image[.]jpg'
+import { Route as ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport } from './routes/api/kobo/$token/v1/library/tags/$tagId/items/delete'
 
-const ShelvesRoute = ShelvesRouteImport.update({
-  id: '/shelves',
-  path: '/shelves',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RegisterRoute = RegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PendingApprovalRoute = PendingApprovalRouteImport.update({
-  id: '/pending-approval',
-  path: '/pending-approval',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -66,9 +51,44 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PendingApprovalRoute = PendingApprovalRouteImport.update({
+  id: '/pending-approval',
+  path: '/pending-approval',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShelvesRoute = ShelvesRouteImport.update({
+  id: '/shelves',
+  path: '/shelves',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthorNameRoute = AuthorNameRouteImport.update({
+  id: '/author/$name',
+  path: '/author/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BooksBookIdRoute = BooksBookIdRouteImport.update({
+  id: '/books/$bookId',
+  path: '/books/$bookId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsKoboRoute = SettingsKoboRouteImport.update({
+  id: '/settings/kobo',
+  path: '/settings/kobo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShelvesIndexRoute = ShelvesIndexRouteImport.update({
@@ -81,24 +101,9 @@ const ShelvesShelfIdRoute = ShelvesShelfIdRouteImport.update({
   path: '/$shelfId',
   getParentRoute: () => ShelvesRoute,
 } as any)
-const SettingsKoboRoute = SettingsKoboRouteImport.update({
-  id: '/settings/kobo',
-  path: '/settings/kobo',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BooksBookIdRoute = BooksBookIdRouteImport.update({
-  id: '/books/$bookId',
-  path: '/books/$bookId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthorNameRoute = AuthorNameRouteImport.update({
-  id: '/author/$name',
-  path: '/author/$name',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/admin/users',
-  path: '/admin/users',
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BooksBookIdEditRoute = BooksBookIdEditRouteImport.update({
@@ -106,25 +111,9 @@ const BooksBookIdEditRoute = BooksBookIdEditRouteImport.update({
   path: '/books/$bookId/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiBooksBookIdCoverRoute = ApiBooksBookIdCoverRouteImport.update({
   id: '/api/books/$bookId/cover',
   path: '/api/books/$bookId/cover',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiKoboTokenV1InitializationRoute =
-  ApiKoboTokenV1InitializationRouteImport.update({
-    id: '/api/kobo/$token/v1/initialization',
-    path: '/api/kobo/$token/v1/initialization',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiKoboTokenV1SplatRoute = ApiKoboTokenV1SplatRouteImport.update({
-  id: '/api/kobo/$token/v1/$',
-  path: '/api/kobo/$token/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiBooksBookIdFilesFileIdRoute =
@@ -133,34 +122,15 @@ const ApiBooksBookIdFilesFileIdRoute =
     path: '/api/books/$bookId/files/$fileId',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiKoboTokenV1LibraryTagsRoute =
-  ApiKoboTokenV1LibraryTagsRouteImport.update({
-    id: '/api/kobo/$token/v1/library/tags',
-    path: '/api/kobo/$token/v1/library/tags',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiKoboTokenV1LibrarySyncRoute =
-  ApiKoboTokenV1LibrarySyncRouteImport.update({
-    id: '/api/kobo/$token/v1/library/sync',
-    path: '/api/kobo/$token/v1/library/sync',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiKoboTokenV1LibraryBookUuidRoute =
-  ApiKoboTokenV1LibraryBookUuidRouteImport.update({
-    id: '/api/kobo/$token/v1/library/$bookUuid',
-    path: '/api/kobo/$token/v1/library/$bookUuid',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiKoboTokenV1AuthRefreshRoute =
-  ApiKoboTokenV1AuthRefreshRouteImport.update({
-    id: '/api/kobo/$token/v1/auth/refresh',
-    path: '/api/kobo/$token/v1/auth/refresh',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiKoboTokenV1AuthDeviceRoute =
-  ApiKoboTokenV1AuthDeviceRouteImport.update({
-    id: '/api/kobo/$token/v1/auth/device',
-    path: '/api/kobo/$token/v1/auth/device',
+const ApiKoboTokenV1SplatRoute = ApiKoboTokenV1SplatRouteImport.update({
+  id: '/api/kobo/$token/v1/$',
+  path: '/api/kobo/$token/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiKoboTokenV1InitializationRoute =
+  ApiKoboTokenV1InitializationRouteImport.update({
+    id: '/api/kobo/$token/v1/initialization',
+    path: '/api/kobo/$token/v1/initialization',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiKoboTokenDownloadBookIdBookFormatRoute =
@@ -169,16 +139,34 @@ const ApiKoboTokenDownloadBookIdBookFormatRoute =
     path: '/api/kobo/$token/download/$bookId/$bookFormat',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiKoboTokenV1LibraryTagsTagIdRoute =
-  ApiKoboTokenV1LibraryTagsTagIdRouteImport.update({
-    id: '/$tagId',
-    path: '/$tagId',
-    getParentRoute: () => ApiKoboTokenV1LibraryTagsRoute,
+const ApiKoboTokenV1AuthDeviceRoute =
+  ApiKoboTokenV1AuthDeviceRouteImport.update({
+    id: '/api/kobo/$token/v1/auth/device',
+    path: '/api/kobo/$token/v1/auth/device',
+    getParentRoute: () => rootRouteImport,
   } as any)
-const ApiKoboTokenV1LibraryIdsStateRoute =
-  ApiKoboTokenV1LibraryIdsStateRouteImport.update({
-    id: '/api/kobo/$token/v1/library/$ids/state',
-    path: '/api/kobo/$token/v1/library/$ids/state',
+const ApiKoboTokenV1AuthRefreshRoute =
+  ApiKoboTokenV1AuthRefreshRouteImport.update({
+    id: '/api/kobo/$token/v1/auth/refresh',
+    path: '/api/kobo/$token/v1/auth/refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryBookUuidRoute =
+  ApiKoboTokenV1LibraryBookUuidRouteImport.update({
+    id: '/api/kobo/$token/v1/library/$bookUuid',
+    path: '/api/kobo/$token/v1/library/$bookUuid',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibrarySyncRoute =
+  ApiKoboTokenV1LibrarySyncRouteImport.update({
+    id: '/api/kobo/$token/v1/library/sync',
+    path: '/api/kobo/$token/v1/library/sync',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryTagsRoute =
+  ApiKoboTokenV1LibraryTagsRouteImport.update({
+    id: '/api/kobo/$token/v1/library/tags',
+    path: '/api/kobo/$token/v1/library/tags',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiKoboTokenV1LibraryIdsMetadataRoute =
@@ -187,11 +175,17 @@ const ApiKoboTokenV1LibraryIdsMetadataRoute =
     path: '/api/kobo/$token/v1/library/$ids/metadata',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiKoboTokenV1LibraryTagsTagIdItemsRoute =
-  ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport.update({
-    id: '/items',
-    path: '/items',
-    getParentRoute: () => ApiKoboTokenV1LibraryTagsTagIdRoute,
+const ApiKoboTokenV1LibraryIdsStateRoute =
+  ApiKoboTokenV1LibraryIdsStateRouteImport.update({
+    id: '/api/kobo/$token/v1/library/$ids/state',
+    path: '/api/kobo/$token/v1/library/$ids/state',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiKoboTokenV1LibraryTagsTagIdRoute =
+  ApiKoboTokenV1LibraryTagsTagIdRouteImport.update({
+    id: '/$tagId',
+    path: '/$tagId',
+    getParentRoute: () => ApiKoboTokenV1LibraryTagsRoute,
   } as any)
 const ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute =
   ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRouteImport.update({
@@ -199,11 +193,11 @@ const ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRoute =
     path: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute =
-  ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport.update({
-    id: '/delete',
-    path: '/delete',
-    getParentRoute: () => ApiKoboTokenV1LibraryTagsTagIdItemsRoute,
+const ApiKoboTokenV1LibraryTagsTagIdItemsRoute =
+  ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport.update({
+    id: '/items',
+    path: '/items',
+    getParentRoute: () => ApiKoboTokenV1LibraryTagsTagIdRoute,
   } as any)
 const ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute =
   ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRouteImport.update(
@@ -213,6 +207,12 @@ const ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRoute =
       getParentRoute: () => rootRouteImport,
     } as any,
   )
+const ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRoute =
+  ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport.update({
+    id: '/delete',
+    path: '/delete',
+    getParentRoute: () => ApiKoboTokenV1LibraryTagsTagIdItemsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -445,32 +445,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/shelves': {
-      id: '/shelves'
-      path: '/shelves'
-      fullPath: '/shelves'
-      preLoaderRoute: typeof ShelvesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pending-approval': {
-      id: '/pending-approval'
-      path: '/pending-approval'
-      fullPath: '/pending-approval'
-      preLoaderRoute: typeof PendingApprovalRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -480,11 +459,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pending-approval': {
+      id: '/pending-approval'
+      path: '/pending-approval'
+      fullPath: '/pending-approval'
+      preLoaderRoute: typeof PendingApprovalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shelves': {
+      id: '/shelves'
+      path: '/shelves'
+      fullPath: '/shelves'
+      preLoaderRoute: typeof ShelvesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/author/$name': {
+      id: '/author/$name'
+      path: '/author/$name'
+      fullPath: '/author/$name'
+      preLoaderRoute: typeof AuthorNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/books/$bookId': {
+      id: '/books/$bookId'
+      path: '/books/$bookId'
+      fullPath: '/books/$bookId'
+      preLoaderRoute: typeof BooksBookIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/kobo': {
+      id: '/settings/kobo'
+      path: '/settings/kobo'
+      fullPath: '/settings/kobo'
+      preLoaderRoute: typeof SettingsKoboRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shelves/': {
@@ -501,32 +529,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShelvesShelfIdRouteImport
       parentRoute: typeof ShelvesRoute
     }
-    '/settings/kobo': {
-      id: '/settings/kobo'
-      path: '/settings/kobo'
-      fullPath: '/settings/kobo'
-      preLoaderRoute: typeof SettingsKoboRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/books/$bookId': {
-      id: '/books/$bookId'
-      path: '/books/$bookId'
-      fullPath: '/books/$bookId'
-      preLoaderRoute: typeof BooksBookIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/author/$name': {
-      id: '/author/$name'
-      path: '/author/$name'
-      fullPath: '/author/$name'
-      preLoaderRoute: typeof AuthorNameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/admin/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/books/$bookId_/edit': {
@@ -536,32 +543,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BooksBookIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/books/$bookId/cover': {
       id: '/api/books/$bookId/cover'
       path: '/api/books/$bookId/cover'
       fullPath: '/api/books/$bookId/cover'
       preLoaderRoute: typeof ApiBooksBookIdCoverRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/kobo/$token/v1/initialization': {
-      id: '/api/kobo/$token/v1/initialization'
-      path: '/api/kobo/$token/v1/initialization'
-      fullPath: '/api/kobo/$token/v1/initialization'
-      preLoaderRoute: typeof ApiKoboTokenV1InitializationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/kobo/$token/v1/$': {
-      id: '/api/kobo/$token/v1/$'
-      path: '/api/kobo/$token/v1/$'
-      fullPath: '/api/kobo/$token/v1/$'
-      preLoaderRoute: typeof ApiKoboTokenV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/books/$bookId/files/$fileId': {
@@ -571,39 +557,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBooksBookIdFilesFileIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/kobo/$token/v1/library/tags': {
-      id: '/api/kobo/$token/v1/library/tags'
-      path: '/api/kobo/$token/v1/library/tags'
-      fullPath: '/api/kobo/$token/v1/library/tags'
-      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsRouteImport
+    '/api/kobo/$token/v1/$': {
+      id: '/api/kobo/$token/v1/$'
+      path: '/api/kobo/$token/v1/$'
+      fullPath: '/api/kobo/$token/v1/$'
+      preLoaderRoute: typeof ApiKoboTokenV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/kobo/$token/v1/library/sync': {
-      id: '/api/kobo/$token/v1/library/sync'
-      path: '/api/kobo/$token/v1/library/sync'
-      fullPath: '/api/kobo/$token/v1/library/sync'
-      preLoaderRoute: typeof ApiKoboTokenV1LibrarySyncRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/kobo/$token/v1/library/$bookUuid': {
-      id: '/api/kobo/$token/v1/library/$bookUuid'
-      path: '/api/kobo/$token/v1/library/$bookUuid'
-      fullPath: '/api/kobo/$token/v1/library/$bookUuid'
-      preLoaderRoute: typeof ApiKoboTokenV1LibraryBookUuidRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/kobo/$token/v1/auth/refresh': {
-      id: '/api/kobo/$token/v1/auth/refresh'
-      path: '/api/kobo/$token/v1/auth/refresh'
-      fullPath: '/api/kobo/$token/v1/auth/refresh'
-      preLoaderRoute: typeof ApiKoboTokenV1AuthRefreshRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/kobo/$token/v1/auth/device': {
-      id: '/api/kobo/$token/v1/auth/device'
-      path: '/api/kobo/$token/v1/auth/device'
-      fullPath: '/api/kobo/$token/v1/auth/device'
-      preLoaderRoute: typeof ApiKoboTokenV1AuthDeviceRouteImport
+    '/api/kobo/$token/v1/initialization': {
+      id: '/api/kobo/$token/v1/initialization'
+      path: '/api/kobo/$token/v1/initialization'
+      fullPath: '/api/kobo/$token/v1/initialization'
+      preLoaderRoute: typeof ApiKoboTokenV1InitializationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/kobo/$token/download/$bookId/$bookFormat': {
@@ -613,18 +578,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiKoboTokenDownloadBookIdBookFormatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/kobo/$token/v1/library/tags/$tagId': {
-      id: '/api/kobo/$token/v1/library/tags/$tagId'
-      path: '/$tagId'
-      fullPath: '/api/kobo/$token/v1/library/tags/$tagId'
-      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRouteImport
-      parentRoute: typeof ApiKoboTokenV1LibraryTagsRoute
+    '/api/kobo/$token/v1/auth/device': {
+      id: '/api/kobo/$token/v1/auth/device'
+      path: '/api/kobo/$token/v1/auth/device'
+      fullPath: '/api/kobo/$token/v1/auth/device'
+      preLoaderRoute: typeof ApiKoboTokenV1AuthDeviceRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/api/kobo/$token/v1/library/$ids/state': {
-      id: '/api/kobo/$token/v1/library/$ids/state'
-      path: '/api/kobo/$token/v1/library/$ids/state'
-      fullPath: '/api/kobo/$token/v1/library/$ids/state'
-      preLoaderRoute: typeof ApiKoboTokenV1LibraryIdsStateRouteImport
+    '/api/kobo/$token/v1/auth/refresh': {
+      id: '/api/kobo/$token/v1/auth/refresh'
+      path: '/api/kobo/$token/v1/auth/refresh'
+      fullPath: '/api/kobo/$token/v1/auth/refresh'
+      preLoaderRoute: typeof ApiKoboTokenV1AuthRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/$bookUuid': {
+      id: '/api/kobo/$token/v1/library/$bookUuid'
+      path: '/api/kobo/$token/v1/library/$bookUuid'
+      fullPath: '/api/kobo/$token/v1/library/$bookUuid'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryBookUuidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/sync': {
+      id: '/api/kobo/$token/v1/library/sync'
+      path: '/api/kobo/$token/v1/library/sync'
+      fullPath: '/api/kobo/$token/v1/library/sync'
+      preLoaderRoute: typeof ApiKoboTokenV1LibrarySyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags': {
+      id: '/api/kobo/$token/v1/library/tags'
+      path: '/api/kobo/$token/v1/library/tags'
+      fullPath: '/api/kobo/$token/v1/library/tags'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/kobo/$token/v1/library/$ids/metadata': {
@@ -634,12 +620,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiKoboTokenV1LibraryIdsMetadataRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/kobo/$token/v1/library/tags/$tagId/items': {
-      id: '/api/kobo/$token/v1/library/tags/$tagId/items'
-      path: '/items'
-      fullPath: '/api/kobo/$token/v1/library/tags/$tagId/items'
-      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport
-      parentRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRoute
+    '/api/kobo/$token/v1/library/$ids/state': {
+      id: '/api/kobo/$token/v1/library/$ids/state'
+      path: '/api/kobo/$token/v1/library/$ids/state'
+      fullPath: '/api/kobo/$token/v1/library/$ids/state'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryIdsStateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags/$tagId': {
+      id: '/api/kobo/$token/v1/library/tags/$tagId'
+      path: '/$tagId'
+      fullPath: '/api/kobo/$token/v1/library/tags/$tagId'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRouteImport
+      parentRoute: typeof ApiKoboTokenV1LibraryTagsRoute
     }
     '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg': {
       id: '/api/kobo/$token/$imageId/$width/$height/$isGreyscale/image.jpg'
@@ -648,12 +641,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiKoboTokenImageIdWidthHeightIsGreyscaleImageDotjpgRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/kobo/$token/v1/library/tags/$tagId/items/delete': {
-      id: '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
-      path: '/delete'
-      fullPath: '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
-      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport
-      parentRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRoute
+    '/api/kobo/$token/v1/library/tags/$tagId/items': {
+      id: '/api/kobo/$token/v1/library/tags/$tagId/items'
+      path: '/items'
+      fullPath: '/api/kobo/$token/v1/library/tags/$tagId/items'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRouteImport
+      parentRoute: typeof ApiKoboTokenV1LibraryTagsTagIdRoute
     }
     '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg': {
       id: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
@@ -661,6 +654,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/kobo/$token/$imageId/$width/$height/$quality/$isGreyscale/image.jpg'
       preLoaderRoute: typeof ApiKoboTokenImageIdWidthHeightQualityIsGreyscaleImageDotjpgRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/kobo/$token/v1/library/tags/$tagId/items/delete': {
+      id: '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
+      path: '/delete'
+      fullPath: '/api/kobo/$token/v1/library/tags/$tagId/items/delete'
+      preLoaderRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsDeleteRouteImport
+      parentRoute: typeof ApiKoboTokenV1LibraryTagsTagIdItemsRoute
     }
   }
 }
