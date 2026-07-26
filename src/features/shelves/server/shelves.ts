@@ -1,6 +1,7 @@
 import type { SqlError } from "@effect/sql/SqlError";
+import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import type {
 	InvalidShelfName,
 	ShelfAccessDenied,
@@ -86,14 +87,29 @@ export const getShelfBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: ShelfBooksInput) => input)
 	.handler(async ({ data, context }) => {
-		return runShelfEffect(
+		// This one backs a route loader. A loader that throws an ordinary error
+		// renders the error boundary and answers 500, so an absent or inaccessible
+		// shelf is turned into router `notFound()` instead — the same convention
+		// `getBookByIdServerFn` already uses.
+		const result = await runServerEffect(
 			ShelfService.listShelfBooks({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 				page: data.page,
 				limit: data.limit,
-			}),
+			}).pipe(
+				Effect.catchTags({
+					ShelfNotFound: () => Effect.succeed(null),
+					ShelfAccessDenied: () => Effect.succeed(null),
+				}),
+			),
 		);
+
+		if (!result) {
+			throw notFound();
+		}
+
+		return result;
 	});
 
 export const updateShelfServerFn = createServerFn({ method: "POST" })
