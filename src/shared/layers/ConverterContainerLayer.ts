@@ -79,7 +79,10 @@ type MultipartPart =
 			contentType?: string;
 	  };
 
-function buildMultipartStream(parts: MultipartPart[]): {
+function buildMultipartStream(
+	parts: MultipartPart[],
+	signal: AbortSignal,
+): {
 	body: ReadableStream<Uint8Array>;
 	contentType: string;
 } {
@@ -88,10 +91,14 @@ function buildMultipartStream(parts: MultipartPart[]): {
 
 	const { readable, writable } = new TransformStream<Uint8Array>();
 
+	// The pump runs outside the fibre that started it, so without the signal an
+	// interrupted or timed-out conversion would leave it draining the R2 body
+	// into a stream nobody reads. The caller aborts the signal on interrupt.
 	(async () => {
 		const writer = writable.getWriter();
 		try {
 			for (const part of parts) {
+				signal.throwIfAborted();
 				if (part.type === "field") {
 					await writer.write(
 						encoder.encode(
@@ -112,10 +119,15 @@ function buildMultipartStream(parts: MultipartPart[]): {
 						const reader = (
 							part.body as ReadableStream<Uint8Array>
 						).getReader();
-						for (;;) {
-							const { done, value } = await reader.read();
-							if (done) break;
-							await writer.write(value);
+						try {
+							for (;;) {
+								signal.throwIfAborted();
+								const { done, value } = await reader.read();
+								if (done) break;
+								await writer.write(value);
+							}
+						} finally {
+							reader.releaseLock();
 						}
 					}
 
@@ -139,6 +151,9 @@ function buildMultipartStream(parts: MultipartPart[]): {
 // Ensure a container stub is ready before streaming the (single-use) body.
 // ---------------------------------------------------------------------------
 
+const HEALTH_CHECK_TIMEOUT = Duration.seconds(10);
+const CONTAINER_REQUEST_TIMEOUT = Duration.minutes(8);
+
 const getReadyStub = () =>
 	Effect.tryPromise({
 		try: async () => {
@@ -150,6 +165,13 @@ const getReadyStub = () =>
 		},
 		catch: (cause) => new ConversionError({ cause }),
 	}).pipe(
+		// Bound each attempt: a container that accepts the connection but never
+		// answers would otherwise hold the retry schedule open indefinitely.
+		Effect.timeoutFail({
+			duration: HEALTH_CHECK_TIMEOUT,
+			onTimeout: () =>
+				new ConversionError({ cause: "container health check timed out" }),
+		}),
 		Effect.retry(
 			Schedule.exponential(Duration.seconds(2)).pipe(
 				Schedule.compose(Schedule.recurs(5)),
@@ -183,104 +205,104 @@ const parseStreamResult = async (
 	};
 };
 
-const processInContainer = (
-	fileBody: ReadableStream,
-	options: ContainerProcessOptions,
+const requestContainer = (
+	path: string,
+	parts: MultipartPart[],
 ): Effect.Effect<ContainerStreamResult, ConversionError> =>
 	Effect.gen(function* () {
 		const stub = yield* getReadyStub();
 
-		return yield* Effect.tryPromise({
-			try: async () => {
-				const parts: MultipartPart[] = [
-					{ type: "field", name: "format_from", value: options.formatFrom },
-					{ type: "field", name: "format_to", value: options.formatTo },
-				];
+		return yield* Effect.suspend(() => {
+			// One controller drives both the multipart pump and the fetch, so an
+			// interrupt or a timeout stops reading R2 instead of leaving a detached
+			// promise writing into a stream nobody consumes.
+			const controller = new AbortController();
 
-				if (options.metadata) {
-					parts.push({
-						type: "field",
-						name: "metadata",
-						value: JSON.stringify(options.metadata),
-					});
-				}
+			return Effect.tryPromise({
+				try: async () => {
+					const { body, contentType } = buildMultipartStream(
+						parts,
+						controller.signal,
+					);
 
-				parts.push({
-					type: "file",
-					name: "file",
-					filename: `input.${options.formatFrom}`,
-					body: fileBody,
-				});
+					const response = await stub.fetch(
+						new Request(`http://converter${path}`, {
+							method: "POST",
+							body,
+							// Required by Fetch spec for streaming request bodies
+							// @ts-expect-error -- not yet in all TS lib types
+							duplex: "half",
+							headers: { "Content-Type": contentType },
+							signal: controller.signal,
+						}),
+					);
 
-				if (options.cover) {
-					parts.push({
-						type: "file",
-						name: "cover",
-						filename: coverFileNameForContentType(options.cover.contentType),
-						body: options.cover.bytes,
-						contentType:
-							options.cover.contentType ?? "application/octet-stream",
-					});
-				}
-
-				const { body, contentType } = buildMultipartStream(parts);
-
-				const response = await stub.fetch(
-					new Request("http://converter/process", {
-						method: "POST",
-						body,
-						// Required by Fetch spec for streaming request bodies
-						// @ts-expect-error -- not yet in all TS lib types
-						duplex: "half",
-						headers: { "Content-Type": contentType },
-					}),
-				);
-
-				return parseStreamResult(response);
-			},
-			catch: (cause) => new ConversionError({ cause }),
+					return await parseStreamResult(response);
+				},
+				catch: (cause) => new ConversionError({ cause }),
+			}).pipe(
+				Effect.onInterrupt(() => Effect.sync(() => controller.abort())),
+				Effect.timeoutFail({
+					duration: CONTAINER_REQUEST_TIMEOUT,
+					onTimeout: () =>
+						new ConversionError({ cause: `container ${path} timed out` }),
+				}),
+			);
 		});
 	});
+
+const processInContainer = (
+	fileBody: ReadableStream,
+	options: ContainerProcessOptions,
+): Effect.Effect<ContainerStreamResult, ConversionError> => {
+	const parts: MultipartPart[] = [
+		{ type: "field", name: "format_from", value: options.formatFrom },
+		{ type: "field", name: "format_to", value: options.formatTo },
+	];
+
+	if (options.metadata) {
+		parts.push({
+			type: "field",
+			name: "metadata",
+			value: JSON.stringify(options.metadata),
+		});
+	}
+
+	parts.push({
+		type: "file",
+		name: "file",
+		filename: `input.${options.formatFrom}`,
+		body: fileBody,
+	});
+
+	if (options.cover) {
+		parts.push({
+			type: "file",
+			name: "cover",
+			filename: coverFileNameForContentType(options.cover.contentType),
+			body: options.cover.bytes,
+			contentType: options.cover.contentType ?? "application/octet-stream",
+		});
+	}
+
+	return requestContainer("/process", parts);
+};
 
 const convertInContainer = (
 	fileBody: ReadableStream,
 	formatFrom: string,
 	formatTo: string,
 ): Effect.Effect<ContainerStreamResult, ConversionError> =>
-	Effect.gen(function* () {
-		const stub = yield* getReadyStub();
-
-		return yield* Effect.tryPromise({
-			try: async () => {
-				const parts: MultipartPart[] = [
-					{ type: "field", name: "format_from", value: formatFrom },
-					{ type: "field", name: "format_to", value: formatTo },
-					{
-						type: "file",
-						name: "file",
-						filename: `input.${formatFrom}`,
-						body: fileBody,
-					},
-				];
-
-				const { body, contentType } = buildMultipartStream(parts);
-
-				const response = await stub.fetch(
-					new Request("http://converter/convert", {
-						method: "POST",
-						body,
-						// Required by Fetch spec for streaming request bodies
-						// @ts-expect-error -- not yet in all TS lib types
-						duplex: "half",
-						headers: { "Content-Type": contentType },
-					}),
-				);
-
-				return parseStreamResult(response);
-			},
-			catch: (cause) => new ConversionError({ cause }),
-		});
-	});
+	requestContainer("/convert", [
+		{ type: "field", name: "format_from", value: formatFrom },
+		{ type: "field", name: "format_to", value: formatTo },
+		{
+			type: "file",
+			name: "file",
+			filename: `input.${formatFrom}`,
+			body: fileBody,
+		},
+	]);
 
 export const ConverterContainerLive = Layer.succeed(ConverterContainerContext, {
 	process: processInContainer,
