@@ -8,6 +8,7 @@ import { EpubService } from "#/features/files/services/EpubService";
 import { FileService } from "#/features/files/services/FileService";
 import { KoboService } from "#/features/kobo/services/KoboService";
 import { ShelfService } from "#/features/shelves/services/ShelfService";
+import { UserService } from "#/features/users/services/UserService";
 import { ConverterContainerLive } from "#/shared/layers/ConverterContainerLayer";
 import { DatabaseLive } from "#/shared/layers/DatabaseLayer";
 import { R2Live } from "#/shared/layers/R2Layer";
@@ -25,6 +26,7 @@ export const AppLayer = Layer.mergeAll(
 	ConversionService.Default,
 	KoboService.Default,
 	ShelfService.Default,
+	UserService.Default,
 );
 
 /** Extended layer that includes the Converter Container — used by the queue handler */

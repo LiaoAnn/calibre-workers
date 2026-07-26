@@ -5,8 +5,13 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { isNull, sql } from "drizzle-orm";
-import { db } from "#/shared/db";
+import { drizzle } from "drizzle-orm/d1";
 import * as schema from "#/shared/db/schema";
+
+// Better Auth's drizzleAdapter needs a plain drizzle client, so it cannot go
+// through `DatabaseContext` like the rest of the app. Scoped to this module so
+// no application code picks it up as a second general-purpose DB handle.
+const db = drizzle(env.DB, { schema });
 
 export const auth = betterAuth({
 	baseURL: env.BETTER_AUTH_URL,
