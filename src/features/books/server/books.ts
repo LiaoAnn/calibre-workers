@@ -19,7 +19,7 @@ import {
 	uploadBookFile,
 } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { r2Keys } from "#/shared/lib/r2-keys";
 
 interface ListBooksServerInput {
@@ -40,7 +40,7 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: ListBooksServerInput | undefined) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			listBooks({
 				page: data?.page,
 				limit: data?.limit,
@@ -49,7 +49,6 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -58,10 +57,9 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: GetBookByIdServerInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			getBookById(data.bookId).pipe(
 				Effect.catchTag("BookNotFound", () => Effect.die(notFound())),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -73,7 +71,7 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 		const { coverTempR2Key, ...bookInput } = data;
 		const userId = context.session.user.id;
 
-		const { files, metadataJobId } = await Effect.runPromise(
+		const { files, metadataJobId } = await ServerRuntime.runPromise(
 			Effect.gen(function* () {
 				if (coverTempR2Key) {
 					const tempCoverObject = yield* getBookFile(coverTempR2Key);
@@ -114,7 +112,6 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 
@@ -124,7 +121,7 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 					jobId: metadataJobId,
 				} satisfies MetadataQueueMessage);
 			} catch (error) {
-				await Effect.runPromise(
+				await ServerRuntime.runPromise(
 					Effect.all(
 						[
 							setBookFilesMetadataStatus({
@@ -139,7 +136,7 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 							}),
 						],
 						{ discard: true },
-					).pipe(Effect.provide(AppLayer)),
+					),
 				);
 				throw error;
 			}

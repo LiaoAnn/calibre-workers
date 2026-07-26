@@ -4,7 +4,7 @@ import { Duration, Effect } from "effect";
 import { failStaleMetadataTasks } from "#/features/books/services/BookService";
 import { failStaleConversionJobs } from "#/features/conversion/services/ConversionService";
 import { failStaleUploadTasks } from "#/features/files/services/FileService";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { QueueRuntime } from "#/shared/layers/AppRuntime";
 
 const STALE_TASK_WINDOW = Duration.minutes(45);
 const STALE_CONVERSION_ERROR_MESSAGE =
@@ -53,5 +53,5 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 		});
 	});
 
-	await Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+	await QueueRuntime.runPromise(runnable);
 };

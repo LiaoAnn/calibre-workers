@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect, Either } from "effect";
 import { getBookFile } from "#/features/files/services/FileService";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { r2Keys } from "#/shared/lib/r2-keys";
 
 export const Route = createFileRoute("/api/books/$bookId/cover")({
@@ -11,9 +11,7 @@ export const Route = createFileRoute("/api/books/$bookId/cover")({
 				const runnable = getBookFile(
 					r2Keys.bookCover({ bookId: params.bookId }),
 				);
-				const result = await Effect.runPromise(
-					Effect.either(runnable.pipe(Effect.provide(AppLayer))),
-				);
+				const result = await ServerRuntime.runPromise(Effect.either(runnable));
 
 				if (Either.isLeft(result)) {
 					if (

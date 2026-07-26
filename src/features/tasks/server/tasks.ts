@@ -3,7 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import * as schema from "#/shared/db/schema";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 
 type TaskType = "upload" | "conversion" | "metadata";
@@ -59,7 +59,7 @@ export const getUploadTasksServerFn = createServerFn({ method: "GET" })
 			return uploadTasksMapped;
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 export const getConversionTasksServerFn = createServerFn({
@@ -100,7 +100,7 @@ export const getConversionTasksServerFn = createServerFn({
 			);
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 export const getMetadataTasksServerFn = createServerFn({
@@ -142,7 +142,7 @@ export const getMetadataTasksServerFn = createServerFn({
 			);
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 interface MarkTaskAsReadInput {
@@ -189,7 +189,7 @@ export const markTaskAsReadServerFn = createServerFn({ method: "POST" })
 			return { success: true };
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 interface MarkTasksAsReadInput {
@@ -250,5 +250,5 @@ export const markTasksAsReadServerFn = createServerFn({ method: "POST" })
 			return { success: true };
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});

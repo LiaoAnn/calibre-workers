@@ -14,7 +14,7 @@ import {
 	uploadBookFile,
 } from "#/features/files/services/FileService";
 import type { BookFileFormat } from "#/shared/db/schema";
-import { AppLayerWithContainer } from "#/shared/layers/AppLayer";
+import { QueueRuntime } from "#/shared/layers/AppRuntime";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
 
@@ -275,10 +275,10 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 			),
 		);
 
-	await Effect.runPromise(
+	await QueueRuntime.runPromise(
 		Effect.forEach(batch.messages, processMessage, {
 			concurrency: "unbounded",
 			discard: true,
-		}).pipe(Effect.provide(AppLayerWithContainer)),
+		}),
 	);
 };

@@ -19,7 +19,7 @@ import {
 	updateShelf,
 } from "#/features/shelves/services/ShelfService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import type { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 
 interface ShelfByIdInput {
@@ -62,7 +62,7 @@ const runShelfEffect = <T>(
 		DatabaseContext
 	>,
 ): Promise<T> =>
-	Effect.runPromise(
+	ServerRuntime.runPromise(
 		effect.pipe(
 			Effect.catchTag("ShelfNotFound", () =>
 				Effect.die(new Error("書架不存在")),
@@ -76,7 +76,6 @@ const runShelfEffect = <T>(
 			Effect.catchTag("SqlError", (error) =>
 				Effect.die(new Error(`[SqlError] ${String(error.message)}`)),
 			),
-			Effect.provide(AppLayer),
 		),
 	);
 

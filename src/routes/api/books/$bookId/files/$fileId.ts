@@ -5,7 +5,7 @@ import {
 	getBookFileRecord,
 } from "#/features/files/services/FileService";
 import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 
 export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 	beforeLoad: async () => {
@@ -46,9 +46,7 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 					return { locked: false as const, fileRecord, object };
 				});
 
-				const result = await Effect.runPromise(
-					runnable.pipe(Effect.provide(AppLayer)),
-				);
+				const result = await ServerRuntime.runPromise(runnable);
 
 				if (!result) {
 					return new Response("File not found", {

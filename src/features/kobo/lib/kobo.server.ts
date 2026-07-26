@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { Data, Effect, Either, Schema } from "effect";
 import type { ConfigError } from "effect/ConfigError";
 import * as schema from "#/shared/db/schema";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import type { R2Context } from "#/shared/layers/R2Layer";
 
@@ -1169,8 +1169,8 @@ const resolveKoboAuthToken = (token: string) =>
 	});
 
 const resolveAuthFromToken = async (token: string) => {
-	const authResult = await Effect.runPromise(
-		Effect.either(resolveKoboAuthToken(token).pipe(Effect.provide(AppLayer))),
+	const authResult = await ServerRuntime.runPromise(
+		Effect.either(resolveKoboAuthToken(token)),
 	);
 
 	if (Either.isLeft(authResult)) {
@@ -1197,7 +1197,7 @@ const logKoboApi = async ({
 			serializeBody(response.clone()),
 		]);
 
-		await Effect.runPromise(
+		await ServerRuntime.runPromise(
 			persistKoboApiLog({
 				authTokenId: auth?.authTokenId ?? null,
 				method: request.method,
@@ -1207,7 +1207,7 @@ const logKoboApi = async ({
 				requestBody,
 				response,
 				responseBody,
-			}).pipe(Effect.provide(AppLayer)),
+			}),
 		);
 	} catch (error) {
 		console.error("Failed to persist Kobo API log", error);
@@ -1383,7 +1383,6 @@ export const withKoboAuth = async <
 			koboToken: token,
 			koboAuth: auth,
 		}).pipe(
-			Effect.provide(AppLayer),
 			Effect.match({
 				onFailure: (error) => ({
 					response: koboErrorResponseFromError(error),
@@ -1393,7 +1392,7 @@ export const withKoboAuth = async <
 			}),
 		);
 
-		const output = await Effect.runPromise(handledEffect);
+		const output = await ServerRuntime.runPromise(handledEffect);
 		await logKoboApi({
 			request: input.request,
 			response: output.response,

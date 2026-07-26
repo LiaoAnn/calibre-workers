@@ -8,7 +8,7 @@ import {
 	searchSeries,
 	searchTags,
 } from "#/features/books/services/AutocompleteService";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 
 interface AutocompleteInput {
 	query: string;
@@ -18,12 +18,11 @@ interface AutocompleteInput {
 export const searchAuthorsServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: AutocompleteInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			searchAuthors(data.query, data.limit).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -31,12 +30,11 @@ export const searchAuthorsServerFn = createServerFn({ method: "GET" })
 export const searchTagsServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: AutocompleteInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			searchTags(data.query, data.limit).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -44,12 +42,11 @@ export const searchTagsServerFn = createServerFn({ method: "GET" })
 export const searchSeriesServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: AutocompleteInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			searchSeries(data.query, data.limit).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -57,12 +54,11 @@ export const searchSeriesServerFn = createServerFn({ method: "GET" })
 export const searchPublishersServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: AutocompleteInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			searchPublishers(data.query, data.limit).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -70,12 +66,11 @@ export const searchPublishersServerFn = createServerFn({ method: "GET" })
 export const searchLanguagesServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: AutocompleteInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			searchLanguages(data.query, data.limit).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});
@@ -83,12 +78,11 @@ export const searchLanguagesServerFn = createServerFn({ method: "GET" })
 export const searchIdentifierTypesServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: AutocompleteInput) => input)
 	.handler(async ({ data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			searchIdentifierTypes(data.query, data.limit).pipe(
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 	});

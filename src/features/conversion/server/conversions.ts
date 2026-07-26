@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import { createConversionJob } from "#/features/conversion/services/ConversionService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 
 interface TriggerConversionInput {
 	bookId: string;
@@ -15,7 +15,7 @@ export const triggerConversionServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: TriggerConversionInput) => input)
 	.handler(async ({ data }) => {
-		const { jobId } = await Effect.runPromise(
+		const { jobId } = await ServerRuntime.runPromise(
 			createConversionJob({
 				bookId: data.bookId,
 				sourceFileId: data.fileId,
@@ -24,7 +24,6 @@ export const triggerConversionServerFn = createServerFn({ method: "POST" })
 				Effect.catchTag("SqlError", (e) =>
 					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
 				),
-				Effect.provide(AppLayer),
 			),
 		);
 

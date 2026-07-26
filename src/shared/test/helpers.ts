@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import * as schema from "#/shared/db/schema";
 import { AppLayer } from "#/shared/layers/AppLayer";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
@@ -44,15 +44,19 @@ const FakeConverterLayer = Layer.succeed(ConverterContainerContext, {
 
 const TestLayer = Layer.mergeAll(AppLayer, FakeConverterLayer);
 
+// Memoized like the production runtimes in `AppRuntime.ts`, so a test that makes
+// several `runTest` calls does not rebuild `D1Client` for each one.
+const TestRuntime = ManagedRuntime.make(TestLayer);
+
 type TestEnv = DatabaseContext | R2Context | ConverterContainerContext;
 
 /** Run an Effect against the real local bindings; rejects on failure. */
 export const runTest = <A, E>(effect: Effect.Effect<A, E, TestEnv>) =>
-	Effect.runPromise(Effect.provide(effect, TestLayer));
+	TestRuntime.runPromise(effect);
 
 /** Run an Effect and capture success/failure as an Exit for asserting error tags. */
 export const runTestExit = <A, E>(effect: Effect.Effect<A, E, TestEnv>) =>
-	Effect.runPromiseExit(Effect.provide(effect, TestLayer));
+	TestRuntime.runPromiseExit(effect);
 
 // ---------------------------------------------------------------------------
 // Seed helpers — Effects requiring DatabaseContext, composable inside a test's

@@ -1,12 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
-import { Effect } from "effect";
 import {
 	createKoboAuthToken,
 	listKoboAuthTokensForUser,
 	revokeKoboAuthToken,
 } from "#/features/kobo/services/KoboService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 
 interface RevokeKoboTokenInput {
 	tokenId?: string;
@@ -15,20 +14,16 @@ interface RevokeKoboTokenInput {
 export const getKoboTokensServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.handler(async ({ context }) => {
-		return Effect.runPromise(
-			listKoboAuthTokensForUser(context.session.user.id).pipe(
-				Effect.provide(AppLayer),
-			),
+		return ServerRuntime.runPromise(
+			listKoboAuthTokensForUser(context.session.user.id),
 		);
 	});
 
 export const createKoboTokenServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.handler(async ({ context }) => {
-		return Effect.runPromise(
-			createKoboAuthToken(context.session.user.id).pipe(
-				Effect.provide(AppLayer),
-			),
+		return ServerRuntime.runPromise(
+			createKoboAuthToken(context.session.user.id),
 		);
 	});
 
@@ -36,10 +31,10 @@ export const revokeKoboTokenServerFn = createServerFn({ method: "POST" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: RevokeKoboTokenInput | undefined) => input)
 	.handler(async ({ context, data }) => {
-		return Effect.runPromise(
+		return ServerRuntime.runPromise(
 			revokeKoboAuthToken({
 				userId: context.session.user.id,
 				tokenId: data?.tokenId,
-			}).pipe(Effect.provide(AppLayer)),
+			}),
 		);
 	});

@@ -26,7 +26,7 @@ import {
 } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import * as schema from "#/shared/db/schema";
-import { AppLayer } from "#/shared/layers/AppLayer";
+import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
 
@@ -120,13 +120,13 @@ export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
 			});
 		}
 
-		await Effect.runPromise(
+		await ServerRuntime.runPromise(
 			uploadBookFile({
 				r2Key: tempR2Key,
 				body: bytes,
 				contentType: file.type || undefined,
 				expectedSize: file.size,
-			}).pipe(Effect.provide(AppLayer)),
+			}),
 		);
 
 		return {
@@ -240,7 +240,7 @@ export const createBookUploadSessionServerFn = createServerFn({
 			};
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 export const uploadBookPartServerFn = createServerFn({ method: "POST" })
@@ -326,7 +326,7 @@ export const uploadBookPartServerFn = createServerFn({ method: "POST" })
 			};
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 interface CompleteBookUploadInput {
@@ -591,7 +591,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 			);
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
 
 interface AbortBookUploadInput {
@@ -657,5 +657,5 @@ export const abortBookUploadServerFn = createServerFn({ method: "POST" })
 			return { success: true };
 		});
 
-		return Effect.runPromise(runnable.pipe(Effect.provide(AppLayer)));
+		return ServerRuntime.runPromise(runnable);
 	});
