@@ -87,8 +87,8 @@ const runMetadataSyncForFile = ({
 			r2Key,
 			body: processed.body,
 			contentType: processed.contentType || mimeTypeForFormat(format),
-			expectedSize: processed.size || undefined,
-		});
+			expectedSize: processed.size,
+		}).pipe(Effect.ensuring(Effect.promise(() => processed.cancel())));
 
 		yield* BookService.setBookFileMetadataStatus({
 			bookId,

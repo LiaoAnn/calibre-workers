@@ -111,12 +111,14 @@ const runConversionJob = (jobId: string) =>
 			job.targetFormat,
 		);
 
-		const processed = yield* container.process(converted.body, {
-			formatFrom: job.targetFormat,
-			formatTo: job.targetFormat,
-			metadata: metadataForContainer,
-			cover,
-		});
+		const processed = yield* container
+			.process(converted.body, {
+				formatFrom: job.targetFormat,
+				formatTo: job.targetFormat,
+				metadata: metadataForContainer,
+				cover,
+			})
+			.pipe(Effect.ensuring(Effect.promise(() => converted.cancel())));
 
 		const baseName = fileRecord.fileName.replace(/\.[^.]+$/, "");
 		const resultFileName = `${baseName}.${job.targetFormat}`;
@@ -129,21 +131,17 @@ const runConversionJob = (jobId: string) =>
 			r2Key: resultR2Key,
 			body: processed.body,
 			contentType: processed.contentType || mimeTypeForFormat(job.targetFormat),
-			expectedSize: processed.size || undefined,
-		});
+			expectedSize: processed.size,
+		}).pipe(Effect.ensuring(Effect.promise(() => processed.cancel())));
 
-		// Use r2Object.size (source file from R2) when Content-Length is missing
-		// from the container response. The final accurate size comes from R2 after
-		// the streamed upload; however ConversionService.createBookFile only needs a best-effort hint
-		// because the file is already persisted.  When the container sets
-		// Content-Length correctly (the Go handler always does) processed.size is
-		// accurate.
+		// ConverterContainerLayer validates Content-Length before exposing the
+		// response body, so this is the exact size R2 consumed.
 		const { fileId: resultFileId } = yield* ConversionService.createBookFile({
 			bookId: job.bookId,
 			format: job.targetFormat,
 			fileName: resultFileName,
 			r2Key: resultR2Key,
-			size: processed.size || r2Object.size,
+			size: processed.size,
 			mimeType: processed.contentType || mimeTypeForFormat(job.targetFormat),
 		});
 

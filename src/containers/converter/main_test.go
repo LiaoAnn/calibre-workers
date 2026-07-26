@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -71,6 +75,37 @@ func TestCoverExtForContentType(t *testing.T) {
 				t.Fatalf("expected %q, got %q", tt.expectedExt, got)
 			}
 		})
+	}
+}
+
+func TestWriteFileResponseFromPath_SetsExactContentLength(t *testing.T) {
+	content := []byte("converted-epub")
+	filePath := filepath.Join(t.TempDir(), "output.epub")
+	if err := os.WriteFile(filePath, content, 0o600); err != nil {
+		t.Fatalf("write fixture failed: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	if err := writeFileResponseFromPath(
+		context.Background(),
+		recorder,
+		formatEPUB,
+		filePath,
+	); err != nil {
+		t.Fatalf("writeFileResponseFromPath failed: %v", err)
+	}
+
+	response := recorder.Result()
+	defer response.Body.Close()
+	if got, want := response.Header.Get("Content-Length"), strconv.Itoa(len(content)); got != want {
+		t.Fatalf("expected Content-Length %q, got %q", want, got)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read response body failed: %v", err)
+	}
+	if !bytes.Equal(body, content) {
+		t.Fatalf("expected response body %q, got %q", content, body)
 	}
 }
 

@@ -27,6 +27,7 @@ interface ContainerStreamResult {
 	body: ReadableStream<Uint8Array>;
 	contentType: string;
 	size: number;
+	cancel(cause?: unknown): Promise<void>;
 }
 
 interface ConverterContainerService {
@@ -183,6 +184,52 @@ const getReadyStub = () =>
 // Container RPC helpers (streaming — no ArrayBuffer buffering in the Worker)
 // ---------------------------------------------------------------------------
 
+const restoreFixedLength = (
+	body: ReadableStream<Uint8Array>,
+	size: number,
+): Pick<ContainerStreamResult, "body" | "cancel"> => {
+	const fixedLength = new FixedLengthStream(size);
+	const reader = body.getReader();
+	const writer = fixedLength.writable.getWriter();
+	let completed = false;
+	let cancellation: Promise<void> | undefined;
+
+	const cancel = (cause?: unknown) => {
+		if (completed) return Promise.resolve();
+		if (cancellation) return cancellation;
+
+		cancellation = Promise.allSettled([
+			Promise.resolve().then(() => reader.cancel(cause)),
+			Promise.resolve().then(() => writer.abort(cause)),
+		]).then(() => undefined);
+		return cancellation;
+	};
+
+	// workerd cannot pipe one identity transform directly into another, so bridge
+	// them manually. Awaiting each write preserves backpressure. Consumers use
+	// the explicit cancel contract because FixedLengthStream does not expose
+	// readable-side cancellation to its writer while a source read is pending.
+	void (async () => {
+		try {
+			for (;;) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				await writer.write(value);
+			}
+			await writer.close();
+		} catch (cause) {
+			await cancel(cause);
+		} finally {
+			if (cancellation) await cancellation;
+			completed = true;
+			reader.releaseLock();
+			writer.releaseLock();
+		}
+	})();
+
+	return { body: fixedLength.readable, cancel };
+};
+
 const parseStreamResult = async (
 	response: Response,
 ): Promise<ContainerStreamResult> => {
@@ -197,11 +244,32 @@ const parseStreamResult = async (
 		throw new Error("Container returned an empty response body");
 	}
 
+	const contentLength = response.headers.get("content-length");
+	const size = Number(contentLength);
+	if (
+		contentLength === null ||
+		!/^\d+$/.test(contentLength) ||
+		!Number.isSafeInteger(size)
+	) {
+		const lengthError = new Error(
+			`Container returned an invalid Content-Length: ${contentLength ?? "missing"}`,
+		);
+		try {
+			await response.body.cancel();
+		} catch (cause) {
+			throw new AggregateError(
+				[lengthError, cause],
+				"Container returned an invalid Content-Length and its body could not be cancelled",
+			);
+		}
+		throw lengthError;
+	}
+
 	return {
-		body: response.body,
+		...restoreFixedLength(response.body, size),
 		contentType:
 			response.headers.get("content-type") ?? "application/octet-stream",
-		size: Number(response.headers.get("content-length") ?? 0),
+		size,
 	};
 };
 

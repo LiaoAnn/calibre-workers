@@ -26,6 +26,7 @@ const cannedResult = () => {
 		body: cannedStream(bytes),
 		contentType: "application/octet-stream",
 		size: bytes.byteLength,
+		cancel: () => Promise.resolve(),
 	};
 };
 
