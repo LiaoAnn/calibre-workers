@@ -1,9 +1,16 @@
-import { applyD1Migrations, env } from "cloudflare:test";
-import { beforeAll } from "vitest";
+import { applyD1Migrations, env, reset } from "cloudflare:test";
+import { beforeEach } from "vitest";
 
-// Apply the project's D1 migrations to the local Miniflare database once before
-// the suite runs. With isolatedStorage enabled, this migrated schema becomes
-// the seed each individual test starts from; per-test writes roll back after.
-beforeAll(async () => {
+// Per-test isolation, and the migrated schema every test starts from.
+//
+// Pool v0.18 dropped the implicit `isolatedStorage` option in favour of an
+// explicit `reset()`, which is more thorough than the old mechanism: it clears
+// the database outright, migrations included. So the two have to happen
+// together — reset, then re-apply — rather than migrating once in `beforeAll`.
+//
+// This preserves the contract every service test relies on: seed freely, never
+// clean up. `src/shared/tests/isolation.test.ts` pins it.
+beforeEach(async () => {
+	await reset();
 	await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
