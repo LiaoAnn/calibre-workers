@@ -184,12 +184,12 @@ function CommandShortcut({
 export {
 	Command,
 	CommandDialog,
-	CommandInput,
-	CommandList,
 	CommandEmpty,
-	CommandLoading,
 	CommandGroup,
+	CommandInput,
 	CommandItem,
-	CommandShortcut,
+	CommandList,
+	CommandLoading,
 	CommandSeparator,
+	CommandShortcut,
 };
