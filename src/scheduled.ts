@@ -1,9 +1,9 @@
 import "@tanstack/react-start/server-only";
 
 import { Duration, Effect } from "effect";
-import { failStaleMetadataTasks } from "#/features/books/services/BookService";
-import { failStaleConversionJobs } from "#/features/conversion/services/ConversionService";
-import { failStaleUploadTasks } from "#/features/files/services/FileService";
+import { BookService } from "#/features/books/services/BookService";
+import { ConversionService } from "#/features/conversion/services/ConversionService";
+import { FileService } from "#/features/files/services/FileService";
 import { QueueRuntime } from "#/shared/layers/AppRuntime";
 
 const STALE_TASK_WINDOW = Duration.minutes(45);
@@ -26,15 +26,15 @@ export const handleScheduled: ExportedHandlerScheduledHandler<Env> = async (
 	const runnable = Effect.gen(function* () {
 		const [conversionResult, metadataResult, uploadResult] = yield* Effect.all(
 			[
-				failStaleConversionJobs({
+				ConversionService.failStaleConversionJobs({
 					staleBefore,
 					errorMessage: STALE_CONVERSION_ERROR_MESSAGE,
 				}),
-				failStaleMetadataTasks({
+				BookService.failStaleMetadataTasks({
 					staleBefore,
 					errorMessage: STALE_METADATA_ERROR_MESSAGE,
 				}),
-				failStaleUploadTasks({
+				FileService.failStaleUploadTasks({
 					staleBefore,
 					errorMessage: STALE_UPLOAD_ERROR_MESSAGE,
 				}),

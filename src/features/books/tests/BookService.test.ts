@@ -1,20 +1,7 @@
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
-import { searchPublishers } from "#/features/books/services/AutocompleteService";
-import {
-	createBookFromUpload,
-	createMetadataJob,
-	deleteBook,
-	failStaleMetadataTasks,
-	getBookById,
-	getBookMetadataForProcess,
-	getMetadataJob,
-	listBookFilesForMetadataSync,
-	listBooks,
-	setBookFilesMetadataStatus,
-	updateBook,
-	updateMetadataJobStatus,
-} from "#/features/books/services/BookService";
+import { AutocompleteService } from "#/features/books/services/AutocompleteService";
+import { BookService } from "#/features/books/services/BookService";
 import * as schema from "#/shared/db/schema";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import {
@@ -25,10 +12,10 @@ import {
 } from "#/shared/test/helpers";
 
 describe("BookService", () => {
-	describe("createBookFromUpload", () => {
+	describe("BookService.createBookFromUpload", () => {
 		it("creates the book, file, tags, publisher, series, identifiers and description", async () => {
 			const created = await runTest(
-				createBookFromUpload({
+				BookService.createBookFromUpload({
 					title: "Dune",
 					authors: ["Frank Herbert", "Brian Herbert"],
 					description: "A desert epic.",
@@ -43,7 +30,7 @@ describe("BookService", () => {
 				}),
 			);
 
-			const book = await runTest(getBookById(created.book.id));
+			const book = await runTest(BookService.getBookById(created.book.id));
 
 			expect(book.title).toBe("Dune");
 			expect(book.authors).toBe("Frank Herbert, Brian Herbert");
@@ -64,25 +51,26 @@ describe("BookService", () => {
 		it("reuses an existing publisher instead of duplicating it", async () => {
 			const { bookA, bookB, publisherSuggestions } = await runTest(
 				Effect.gen(function* () {
-					const a = yield* createBookFromUpload({
+					const a = yield* BookService.createBookFromUpload({
 						title: "A",
 						authors: ["X"],
 						publisher: "Shared Press",
 						fileName: "a.epub",
 						size: 1,
 					});
-					const b = yield* createBookFromUpload({
+					const b = yield* BookService.createBookFromUpload({
 						title: "B",
 						authors: ["Y"],
 						publisher: "Shared Press",
 						fileName: "b.epub",
 						size: 1,
 					});
-					const bookA = yield* getBookById(a.book.id);
-					const bookB = yield* getBookById(b.book.id);
+					const bookA = yield* BookService.getBookById(a.book.id);
+					const bookB = yield* BookService.getBookById(b.book.id);
 					// Autocomplete returns one entry per distinct publisher — a duplicate
 					// publisher would surface twice here.
-					const publisherSuggestions = yield* searchPublishers("Shared");
+					const publisherSuggestions =
+						yield* AutocompleteService.searchPublishers("Shared");
 					return { bookA, bookB, publisherSuggestions };
 				}),
 			);
@@ -94,19 +82,19 @@ describe("BookService", () => {
 
 		it("infers the file format from the file extension", async () => {
 			const created = await runTest(
-				createBookFromUpload({
+				BookService.createBookFromUpload({
 					title: "Mobi Book",
 					authors: ["Z"],
 					fileName: "book.azw3",
 					size: 10,
 				}),
 			);
-			const book = await runTest(getBookById(created.book.id));
+			const book = await runTest(BookService.getBookById(created.book.id));
 			expect(book.files[0]?.format).toBe("azw3");
 		});
 	});
 
-	describe("listBooks", () => {
+	describe("BookService.listBooks", () => {
 		it("paginates and reports the total", async () => {
 			await runTest(
 				Effect.gen(function* () {
@@ -116,11 +104,15 @@ describe("BookService", () => {
 				}),
 			);
 
-			const firstPage = await runTest(listBooks({ page: 1, limit: 2 }));
+			const firstPage = await runTest(
+				BookService.listBooks({ page: 1, limit: 2 }),
+			);
 			expect(firstPage.total).toBe(3);
 			expect(firstPage.items).toHaveLength(2);
 
-			const secondPage = await runTest(listBooks({ page: 2, limit: 2 }));
+			const secondPage = await runTest(
+				BookService.listBooks({ page: 2, limit: 2 }),
+			);
 			expect(secondPage.items).toHaveLength(1);
 		});
 
@@ -132,15 +124,17 @@ describe("BookService", () => {
 				}),
 			);
 
-			const result = await runTest(listBooks({ author: "Ursula K. Le Guin" }));
+			const result = await runTest(
+				BookService.listBooks({ author: "Ursula K. Le Guin" }),
+			);
 			expect(result.total).toBe(1);
 			expect(result.items[0]?.title).toBe("Match");
 		});
 	});
 
-	describe("getBookById", () => {
+	describe("BookService.getBookById", () => {
 		it("fails with BookNotFound for an unknown id", async () => {
-			const exit = await runTestExit(getBookById("does-not-exist"));
+			const exit = await runTestExit(BookService.getBookById("does-not-exist"));
 			expect(Exit.isFailure(exit)).toBe(true);
 			if (Exit.isFailure(exit)) {
 				const error = Exit.causeOption(exit);
@@ -149,10 +143,10 @@ describe("BookService", () => {
 		});
 	});
 
-	describe("updateBook", () => {
+	describe("BookService.updateBook", () => {
 		it("replaces tags, identifiers and description", async () => {
 			const created = await runTest(
-				createBookFromUpload({
+				BookService.createBookFromUpload({
 					title: "Original",
 					authors: ["Author One"],
 					tags: ["old-tag"],
@@ -164,7 +158,7 @@ describe("BookService", () => {
 			);
 
 			await runTest(
-				updateBook({
+				BookService.updateBook({
 					bookId: created.book.id,
 					title: "Updated",
 					authors: ["Author Two"],
@@ -174,7 +168,7 @@ describe("BookService", () => {
 				}),
 			);
 
-			const book = await runTest(getBookById(created.book.id));
+			const book = await runTest(BookService.getBookById(created.book.id));
 			expect(book.title).toBe("Updated");
 			expect(book.authors).toBe("Author Two");
 			expect(book.tags.map((t) => t.name)).toEqual(["new-tag"]);
@@ -184,10 +178,10 @@ describe("BookService", () => {
 		});
 	});
 
-	describe("deleteBook", () => {
+	describe("BookService.deleteBook", () => {
 		it("cascade-deletes the book and its files", async () => {
 			const created = await runTest(
-				createBookFromUpload({
+				BookService.createBookFromUpload({
 					title: "Doomed",
 					authors: ["A"],
 					tags: ["t"],
@@ -196,13 +190,13 @@ describe("BookService", () => {
 				}),
 			);
 
-			await runTest(deleteBook(created.book.id));
+			await runTest(BookService.deleteBook(created.book.id));
 
-			const exit = await runTestExit(getBookById(created.book.id));
+			const exit = await runTestExit(BookService.getBookById(created.book.id));
 			expect(Exit.isFailure(exit)).toBe(true);
 
 			// The deleted book no longer appears in listings either.
-			const listing = await runTest(listBooks());
+			const listing = await runTest(BookService.listBooks());
 			expect(listing.items.some((b) => b.id === created.book.id)).toBe(false);
 		});
 	});
@@ -213,26 +207,26 @@ describe("BookService", () => {
 				Effect.gen(function* () {
 					const userId = yield* seedUser();
 					const bookId = yield* seedBook();
-					return yield* createMetadataJob({ bookId, userId });
+					return yield* BookService.createMetadataJob({ bookId, userId });
 				}),
 			);
 
-			const pending = await runTest(getMetadataJob(jobId));
+			const pending = await runTest(BookService.getMetadataJob(jobId));
 			expect(pending.status).toBe("pending");
 
 			await runTest(
-				updateMetadataJobStatus(jobId, {
+				BookService.updateMetadataJobStatus(jobId, {
 					status: "failed",
 					errorMessage: "boom",
 				}),
 			);
 
-			const failed = await runTest(getMetadataJob(jobId));
+			const failed = await runTest(BookService.getMetadataJob(jobId));
 			expect(failed.status).toBe("failed");
 			expect(failed.errorMessage).toBe("boom");
 		});
 
-		it("failStaleMetadataTasks fails only jobs older than the cutoff", async () => {
+		it("BookService.failStaleMetadataTasks fails only jobs older than the cutoff", async () => {
 			const oldDate = new Date(Date.now() - 60 * 60 * 1000);
 			const { staleJobId, freshJobId } = await runTest(
 				Effect.gen(function* () {
@@ -249,21 +243,24 @@ describe("BookService", () => {
 						updatedAt: oldDate,
 					});
 
-					const fresh = yield* createMetadataJob({ bookId, userId });
+					const fresh = yield* BookService.createMetadataJob({
+						bookId,
+						userId,
+					});
 					return { staleJobId, freshJobId: fresh.jobId };
 				}),
 			);
 
 			const result = await runTest(
-				failStaleMetadataTasks({
+				BookService.failStaleMetadataTasks({
 					staleBefore: new Date(Date.now() - 30 * 60 * 1000),
 					errorMessage: "stale",
 				}),
 			);
 			expect(result.affectedCount).toBe(1);
 
-			const stale = await runTest(getMetadataJob(staleJobId));
-			const fresh = await runTest(getMetadataJob(freshJobId));
+			const stale = await runTest(BookService.getMetadataJob(staleJobId));
+			const fresh = await runTest(BookService.getMetadataJob(freshJobId));
 			expect(stale.status).toBe("failed");
 			expect(fresh.status).toBe("pending");
 		});
@@ -272,7 +269,7 @@ describe("BookService", () => {
 	describe("metadata sync status", () => {
 		it("exposes process metadata and updates the file sync status", async () => {
 			const created = await runTest(
-				createBookFromUpload({
+				BookService.createBookFromUpload({
 					title: "Meta Book",
 					authors: ["First Author", "Second Author"],
 					publisher: "Meta Pub",
@@ -283,7 +280,9 @@ describe("BookService", () => {
 				}),
 			);
 
-			const meta = await runTest(getBookMetadataForProcess(created.book.id));
+			const meta = await runTest(
+				BookService.getBookMetadataForProcess(created.book.id),
+			);
 			expect(meta.title).toBe("Meta Book");
 			expect(meta.authors).toEqual(["First Author", "Second Author"]);
 			expect(meta.publisher).toBe("Meta Pub");
@@ -291,18 +290,18 @@ describe("BookService", () => {
 			expect(meta.hasCover).toBe(true);
 
 			const files = await runTest(
-				listBookFilesForMetadataSync(created.book.id),
+				BookService.listBookFilesForMetadataSync(created.book.id),
 			);
 			expect(files.map((f) => f.fileId)).toContain(created.file.id);
 
 			await runTest(
-				setBookFilesMetadataStatus({
+				BookService.setBookFilesMetadataStatus({
 					bookId: created.book.id,
 					status: "pending",
 				}),
 			);
 
-			const book = await runTest(getBookById(created.book.id));
+			const book = await runTest(BookService.getBookById(created.book.id));
 			expect(book.files[0]?.metadataStatus).toBe("pending");
 		});
 	});

@@ -8,10 +8,7 @@ import {
 	parseRenameTagBody,
 } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import {
-	deleteKoboTag,
-	renameKoboTag,
-} from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/tags/$tagId")(
 	{
@@ -20,7 +17,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/tags/$tagId")(
 				DELETE: async (input) =>
 					withKoboAuth(input, ({ params, koboAuth }) =>
 						Effect.gen(function* () {
-							yield* deleteKoboTag({
+							yield* KoboService.deleteKoboTag({
 								userId: koboAuth.userId,
 								tagId: params.tagId,
 							});
@@ -63,7 +60,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/tags/$tagId")(
 								);
 							}
 
-							yield* renameKoboTag({
+							yield* KoboService.renameKoboTag({
 								userId: koboAuth.userId,
 								tagId: params.tagId,
 								name,

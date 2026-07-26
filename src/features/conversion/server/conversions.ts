@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
-import { createConversionJob } from "#/features/conversion/services/ConversionService";
+import { ConversionService } from "#/features/conversion/services/ConversionService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
 
@@ -16,7 +16,7 @@ export const triggerConversionServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: TriggerConversionInput) => input)
 	.handler(async ({ data }) => {
 		const { jobId } = await ServerRuntime.runPromise(
-			createConversionJob({
+			ConversionService.createConversionJob({
 				bookId: data.bookId,
 				sourceFileId: data.fileId,
 				targetFormat: data.targetFormat,

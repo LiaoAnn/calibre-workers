@@ -1,12 +1,6 @@
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
-import {
-	createBookFile,
-	createConversionJob,
-	failStaleConversionJobs,
-	getConversionJob,
-	updateConversionJobStatus,
-} from "#/features/conversion/services/ConversionService";
+import { ConversionService } from "#/features/conversion/services/ConversionService";
 import * as schema from "#/shared/db/schema";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import {
@@ -23,13 +17,13 @@ describe("ConversionService", () => {
 				const bookId = yield* seedBook();
 				const sourceFileId = yield* seedBookFile(bookId, { format: "epub" });
 
-				const { jobId } = yield* createConversionJob({
+				const { jobId } = yield* ConversionService.createConversionJob({
 					bookId,
 					sourceFileId,
 					targetFormat: "kepub",
 				});
 
-				const { fileId } = yield* createBookFile({
+				const { fileId } = yield* ConversionService.createBookFile({
 					bookId,
 					format: "kepub",
 					fileName: "out.kepub",
@@ -37,7 +31,7 @@ describe("ConversionService", () => {
 					size: 2048,
 				});
 
-				yield* updateConversionJobStatus(jobId, {
+				yield* ConversionService.updateConversionJobStatus(jobId, {
 					status: "done",
 					resultFileId: fileId,
 				});
@@ -46,14 +40,16 @@ describe("ConversionService", () => {
 			}),
 		);
 
-		const job = await runTest(getConversionJob(jobId));
+		const job = await runTest(ConversionService.getConversionJob(jobId));
 		expect(job.status).toBe("done");
 		expect(job.targetFormat).toBe("kepub");
 		expect(job.resultFileId).toBe(resultFileId);
 	});
 
 	it("fails with ConversionJobNotFound for an unknown id", async () => {
-		const exit = await runTestExit(getConversionJob("missing"));
+		const exit = await runTestExit(
+			ConversionService.getConversionJob("missing"),
+		);
 		expect(Exit.isFailure(exit)).toBe(true);
 		if (Exit.isFailure(exit)) {
 			expect(JSON.stringify(Exit.causeOption(exit))).toContain(
@@ -62,7 +58,7 @@ describe("ConversionService", () => {
 		}
 	});
 
-	it("failStaleConversionJobs fails only jobs older than the cutoff", async () => {
+	it("ConversionService.failStaleConversionJobs fails only jobs older than the cutoff", async () => {
 		const oldDate = new Date(Date.now() - 60 * 60 * 1000);
 
 		const { staleJobId, freshJobId } = await runTest(
@@ -81,7 +77,7 @@ describe("ConversionService", () => {
 					updatedAt: oldDate,
 				});
 
-				const fresh = yield* createConversionJob({
+				const fresh = yield* ConversionService.createConversionJob({
 					bookId,
 					sourceFileId,
 					targetFormat: "mobi",
@@ -91,15 +87,15 @@ describe("ConversionService", () => {
 		);
 
 		const result = await runTest(
-			failStaleConversionJobs({
+			ConversionService.failStaleConversionJobs({
 				staleBefore: new Date(Date.now() - 30 * 60 * 1000),
 				errorMessage: "stale conversion",
 			}),
 		);
 		expect(result.affectedCount).toBe(1);
 
-		const stale = await runTest(getConversionJob(staleJobId));
-		const fresh = await runTest(getConversionJob(freshJobId));
+		const stale = await runTest(ConversionService.getConversionJob(staleJobId));
+		const fresh = await runTest(ConversionService.getConversionJob(freshJobId));
 		expect(stale.status).toBe("failed");
 		expect(stale.errorMessage).toBe("stale conversion");
 		expect(fresh.status).toBe("pending");

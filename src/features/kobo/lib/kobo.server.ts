@@ -1,8 +1,7 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { Data, Effect, Either, Schema } from "effect";
 import type { ConfigError } from "effect/ConfigError";
-import type { DatabaseContext } from "#/shared/layers/DatabaseLayer";
-import type { R2Context } from "#/shared/layers/R2Layer";
+import type { AppServices } from "#/shared/layers/AppLayer";
 
 export const KOBO_TEXT_HEADERS = {
 	"content-type": "text/plain; charset=utf-8",
@@ -1043,16 +1042,12 @@ export const resolveKoboLocalOrProxy = <A, E extends KoboHandledError>({
 	rawStoreToken,
 	onLocalFailure,
 }: {
-	local: Effect.Effect<A, E, DatabaseContext | R2Context>;
+	local: Effect.Effect<A, E, AppServices>;
 	request: KoboRequestPayload;
 	token: string;
 	rawStoreToken?: string;
 	onLocalFailure: (error: E) => KoboHandledError;
-}): Effect.Effect<
-	KoboLocalOrProxyResult<A>,
-	KoboHandledError,
-	DatabaseContext | R2Context
-> =>
+}): Effect.Effect<KoboLocalOrProxyResult<A>, KoboHandledError, AppServices> =>
 	Effect.gen(function* () {
 		const localResult = yield* Effect.either(local);
 		if (Either.isRight(localResult)) {

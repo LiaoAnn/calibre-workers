@@ -1,18 +1,8 @@
 import "@tanstack/react-start/server-only";
 
 import { Cause, Duration, Effect, Either, Exit } from "effect";
-import {
-	getBookMetadataForProcess,
-	getMetadataJob,
-	listBookFilesForMetadataSync,
-	setBookFileMetadataStatus,
-	setBookFilesMetadataStatus,
-	updateMetadataJobStatus,
-} from "#/features/books/services/BookService";
-import {
-	getBookFile,
-	uploadBookFile,
-} from "#/features/files/services/FileService";
+import { BookService } from "#/features/books/services/BookService";
+import { FileService } from "#/features/files/services/FileService";
 import type { BookFileFormat } from "#/shared/db/schema";
 import { QueueRuntime } from "#/shared/layers/AppRuntime";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
@@ -66,14 +56,14 @@ const runMetadataSyncForFile = ({
 	};
 }) =>
 	Effect.gen(function* () {
-		yield* setBookFileMetadataStatus({
+		yield* BookService.setBookFileMetadataStatus({
 			bookId,
 			fileId,
 			status: "processing",
 			onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
 		});
 
-		const source = yield* getBookFile(r2Key);
+		const source = yield* FileService.getBookFile(r2Key);
 
 		// Stream R2 body → process container → R2.
 		// No ArrayBuffer buffering in the Worker for the main book file.
@@ -85,14 +75,14 @@ const runMetadataSyncForFile = ({
 			cover,
 		});
 
-		yield* uploadBookFile({
+		yield* FileService.uploadBookFile({
 			r2Key,
 			body: processed.body,
 			contentType: processed.contentType || mimeTypeForFormat(format),
 			expectedSize: processed.size || undefined,
 		});
 
-		yield* setBookFileMetadataStatus({
+		yield* BookService.setBookFileMetadataStatus({
 			bookId,
 			fileId,
 			status: "ready",
@@ -100,7 +90,7 @@ const runMetadataSyncForFile = ({
 		});
 	}).pipe(
 		Effect.catchAllCause((cause) =>
-			setBookFileMetadataStatus({
+			BookService.setBookFileMetadataStatus({
 				bookId,
 				fileId,
 				status: "failed",
@@ -114,34 +104,36 @@ const runMetadataSyncForFile = ({
 
 const runMetadataSync = (jobId: string) =>
 	Effect.gen(function* () {
-		const job = yield* getMetadataJob(jobId);
+		const job = yield* BookService.getMetadataJob(jobId);
 
-		yield* updateMetadataJobStatus(jobId, {
+		yield* BookService.updateMetadataJobStatus(jobId, {
 			status: "processing",
 		});
 
-		const files = yield* listBookFilesForMetadataSync(job.bookId);
+		const files = yield* BookService.listBookFilesForMetadataSync(job.bookId);
 
 		if (files.length === 0) {
-			yield* updateMetadataJobStatus(jobId, {
+			yield* BookService.updateMetadataJobStatus(jobId, {
 				status: "done",
 			});
 			return;
 		}
 
-		yield* setBookFilesMetadataStatus({
+		yield* BookService.setBookFilesMetadataStatus({
 			bookId: job.bookId,
 			fileIds: files.map((file) => file.fileId),
 			status: "processing",
 			onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
 		});
 
-		const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
+		const latestMetadata = yield* BookService.getBookMetadataForProcess(
+			job.bookId,
+		);
 		const { hasCover, ...metadataForContainer } = latestMetadata;
 
 		const cover = hasCover
 			? yield* Effect.gen(function* () {
-					const coverObject = yield* getBookFile(
+					const coverObject = yield* FileService.getBookFile(
 						r2Keys.bookCover({ bookId: job.bookId }),
 					);
 					const coverBytes = yield* Effect.tryPromise({
@@ -182,7 +174,7 @@ const runMetadataSync = (jobId: string) =>
 			);
 		}
 
-		yield* updateMetadataJobStatus(jobId, {
+		yield* BookService.updateMetadataJobStatus(jobId, {
 			status: "done",
 		});
 	});
@@ -204,14 +196,14 @@ const settleMetadataFailure = ({
 			);
 		});
 
-		yield* updateMetadataJobStatus(jobId, {
+		yield* BookService.updateMetadataJobStatus(jobId, {
 			status: "failed",
 			errorMessage,
 		}).pipe(Effect.catchAll(() => Effect.void));
 
-		const jobResult = yield* Effect.either(getMetadataJob(jobId));
+		const jobResult = yield* Effect.either(BookService.getMetadataJob(jobId));
 		if (Either.isRight(jobResult)) {
-			yield* setBookFilesMetadataStatus({
+			yield* BookService.setBookFilesMetadataStatus({
 				bookId: jobResult.right.bookId,
 				status: "failed",
 				onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
@@ -254,14 +246,16 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 						causePretty,
 					);
 
-					yield* updateMetadataJobStatus(jobId, {
+					yield* BookService.updateMetadataJobStatus(jobId, {
 						status: "failed",
 						errorMessage: causePretty,
 					}).pipe(Effect.catchAll(() => Effect.void));
 
-					const jobResult = yield* Effect.either(getMetadataJob(jobId));
+					const jobResult = yield* Effect.either(
+						BookService.getMetadataJob(jobId),
+					);
 					if (Either.isRight(jobResult)) {
-						yield* setBookFilesMetadataStatus({
+						yield* BookService.setBookFilesMetadataStatus({
 							bookId: jobResult.right.bookId,
 							status: "failed",
 							onlyIfCurrentStatusIn: ["pending", "processing", "failed"],

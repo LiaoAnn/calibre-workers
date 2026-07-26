@@ -1,10 +1,8 @@
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer } from "effect";
 import * as schema from "#/shared/db/schema";
 import { AppLayer } from "#/shared/layers/AppLayer";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
-import type { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import { DatabaseContext as DbTag } from "#/shared/layers/DatabaseLayer";
-import type { R2Context } from "#/shared/layers/R2Layer";
 
 // ---------------------------------------------------------------------------
 // Fake converter container
@@ -44,19 +42,21 @@ const FakeConverterLayer = Layer.succeed(ConverterContainerContext, {
 
 const TestLayer = Layer.mergeAll(AppLayer, FakeConverterLayer);
 
-// Memoized like the production runtimes in `AppRuntime.ts`, so a test that makes
-// several `runTest` calls does not rebuild `D1Client` for each one.
-const TestRuntime = ManagedRuntime.make(TestLayer);
+// Derived from the layer so adding a service to AppLayer never needs an edit here.
+type TestEnv = Layer.Layer.Success<typeof TestLayer>;
 
-type TestEnv = DatabaseContext | R2Context | ConverterContainerContext;
+// Deliberately NOT a shared ManagedRuntime, unlike the production runtimes in
+// `AppRuntime.ts`. `isolatedStorage` tears down and restores Miniflare storage
+// between tests; a runtime whose D1 client outlives that boundary intermittently
+// hangs on a later test. Per-call `Effect.provide` keeps each test self-contained.
 
 /** Run an Effect against the real local bindings; rejects on failure. */
 export const runTest = <A, E>(effect: Effect.Effect<A, E, TestEnv>) =>
-	TestRuntime.runPromise(effect);
+	Effect.runPromise(Effect.provide(effect, TestLayer));
 
 /** Run an Effect and capture success/failure as an Exit for asserting error tags. */
 export const runTestExit = <A, E>(effect: Effect.Effect<A, E, TestEnv>) =>
-	TestRuntime.runPromiseExit(effect);
+	Effect.runPromiseExit(Effect.provide(effect, TestLayer));
 
 // ---------------------------------------------------------------------------
 // Seed helpers — Effects requiring DatabaseContext, composable inside a test's

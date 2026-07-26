@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { parseEpubMetadataAndCoverFromR2 } from "#/features/files/services/EpubService";
-import { uploadBookFile } from "#/features/files/services/FileService";
+import { EpubService } from "#/features/files/services/EpubService";
+import { FileService } from "#/features/files/services/FileService";
 import { runTest } from "#/shared/test/helpers";
 
 // 1x1 transparent PNG.
@@ -56,8 +56,8 @@ describe("EpubService", () => {
 
 		const result = await runTest(
 			Effect.gen(function* () {
-				yield* uploadBookFile({ r2Key, body: epub });
-				return yield* parseEpubMetadataAndCoverFromR2({ r2Key });
+				yield* FileService.uploadBookFile({ r2Key, body: epub });
+				return yield* EpubService.parseEpubMetadataAndCoverFromR2({ r2Key });
 			}),
 		);
 

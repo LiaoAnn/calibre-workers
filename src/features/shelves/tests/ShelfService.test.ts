@@ -1,17 +1,6 @@
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
-import {
-	addBooksToShelf,
-	createShelf,
-	deleteShelf,
-	listBookShelfIds,
-	listShelfBooks,
-	listShelfKoboSyncSettings,
-	listShelves,
-	removeBookFromShelf,
-	setShelfKoboSync,
-	updateShelf,
-} from "#/features/shelves/services/ShelfService";
+import { ShelfService } from "#/features/shelves/services/ShelfService";
 import {
 	runTest,
 	runTestExit,
@@ -24,7 +13,10 @@ describe("ShelfService", () => {
 		const { userId, shelf } = await runTest(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				const shelf = yield* createShelf({ userId, name: "  My Shelf  " });
+				const shelf = yield* ShelfService.createShelf({
+					userId,
+					name: "  My Shelf  ",
+				});
 				return { userId, shelf };
 			}),
 		);
@@ -32,7 +24,7 @@ describe("ShelfService", () => {
 		expect(shelf.name).toBe("My Shelf"); // trimmed
 		expect(shelf.bookCount).toBe(0);
 
-		const list = await runTest(listShelves(userId));
+		const list = await runTest(ShelfService.listShelves(userId));
 		expect(list).toHaveLength(1);
 		expect(list[0]?.id).toBe(shelf.id);
 	});
@@ -41,7 +33,7 @@ describe("ShelfService", () => {
 		const exit = await runTestExit(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				return yield* createShelf({ userId, name: "   " });
+				return yield* ShelfService.createShelf({ userId, name: "   " });
 			}),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);
@@ -56,7 +48,10 @@ describe("ShelfService", () => {
 		const { userId, shelfId, bookA, bookB } = await runTest(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				const shelf = yield* createShelf({ userId, name: "Reading" });
+				const shelf = yield* ShelfService.createShelf({
+					userId,
+					name: "Reading",
+				});
 				const bookA = yield* seedBook({ title: "A" });
 				const bookB = yield* seedBook({ title: "B" });
 				return { userId, shelfId: shelf.id, bookA, bookB };
@@ -64,7 +59,7 @@ describe("ShelfService", () => {
 		);
 
 		const first = await runTest(
-			addBooksToShelf({
+			ShelfService.addBooksToShelf({
 				userId,
 				shelfId,
 				bookIds: [bookA, bookB, "missing-book-id"],
@@ -75,12 +70,14 @@ describe("ShelfService", () => {
 
 		// Re-adding the same books skips them.
 		const second = await runTest(
-			addBooksToShelf({ userId, shelfId, bookIds: [bookA] }),
+			ShelfService.addBooksToShelf({ userId, shelfId, bookIds: [bookA] }),
 		);
 		expect(second.addedCount).toBe(0);
 		expect(second.skippedCount).toBe(1);
 
-		const books = await runTest(listShelfBooks({ userId, shelfId }));
+		const books = await runTest(
+			ShelfService.listShelfBooks({ userId, shelfId }),
+		);
 		expect(books.total).toBe(2);
 		expect(books.items).toHaveLength(2);
 	});
@@ -89,9 +86,9 @@ describe("ShelfService", () => {
 		const { userId, shelfId, bookId } = await runTest(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				const shelf = yield* createShelf({ userId, name: "S" });
+				const shelf = yield* ShelfService.createShelf({ userId, name: "S" });
 				const bookId = yield* seedBook();
-				yield* addBooksToShelf({
+				yield* ShelfService.addBooksToShelf({
 					userId,
 					shelfId: shelf.id,
 					bookIds: [bookId],
@@ -100,8 +97,12 @@ describe("ShelfService", () => {
 			}),
 		);
 
-		await runTest(removeBookFromShelf({ userId, shelfId, bookId }));
-		const books = await runTest(listShelfBooks({ userId, shelfId }));
+		await runTest(
+			ShelfService.removeBookFromShelf({ userId, shelfId, bookId }),
+		);
+		const books = await runTest(
+			ShelfService.listShelfBooks({ userId, shelfId }),
+		);
 		expect(books.total).toBe(0);
 	});
 
@@ -109,9 +110,12 @@ describe("ShelfService", () => {
 		const { userId, shelfId, bookId } = await runTest(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				const shelf = yield* createShelf({ userId, name: "Owned" });
+				const shelf = yield* ShelfService.createShelf({
+					userId,
+					name: "Owned",
+				});
 				const bookId = yield* seedBook();
-				yield* addBooksToShelf({
+				yield* ShelfService.addBooksToShelf({
 					userId,
 					shelfId: shelf.id,
 					bookIds: [bookId],
@@ -120,7 +124,9 @@ describe("ShelfService", () => {
 			}),
 		);
 
-		const shelfIds = await runTest(listBookShelfIds({ userId, bookId }));
+		const shelfIds = await runTest(
+			ShelfService.listBookShelfIds({ userId, bookId }),
+		);
 		expect(shelfIds).toEqual([shelfId]);
 	});
 
@@ -128,13 +134,13 @@ describe("ShelfService", () => {
 		const { userId, shelfId } = await runTest(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				const shelf = yield* createShelf({ userId, name: "Temp" });
+				const shelf = yield* ShelfService.createShelf({ userId, name: "Temp" });
 				return { userId, shelfId: shelf.id };
 			}),
 		);
 
-		await runTest(deleteShelf({ userId, shelfId }));
-		const list = await runTest(listShelves(userId));
+		await runTest(ShelfService.deleteShelf({ userId, shelfId }));
+		const list = await runTest(ShelfService.listShelves(userId));
 		expect(list).toHaveLength(0);
 	});
 
@@ -143,13 +149,20 @@ describe("ShelfService", () => {
 			Effect.gen(function* () {
 				const ownerId = yield* seedUser();
 				const otherUserId = yield* seedUser();
-				const shelf = yield* createShelf({ userId: ownerId, name: "Private" });
+				const shelf = yield* ShelfService.createShelf({
+					userId: ownerId,
+					name: "Private",
+				});
 				return { otherUserId, shelfId: shelf.id };
 			}),
 		);
 
 		const exit = await runTestExit(
-			updateShelf({ userId: otherUserId, shelfId, name: "Hijacked" }),
+			ShelfService.updateShelf({
+				userId: otherUserId,
+				shelfId,
+				name: "Hijacked",
+			}),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);
 		if (Exit.isFailure(exit)) {
@@ -163,17 +176,26 @@ describe("ShelfService", () => {
 		const { userId, shelfId } = await runTest(
 			Effect.gen(function* () {
 				const userId = yield* seedUser();
-				const shelf = yield* createShelf({ userId, name: "Synced" });
+				const shelf = yield* ShelfService.createShelf({
+					userId,
+					name: "Synced",
+				});
 				return { userId, shelfId: shelf.id };
 			}),
 		);
 
-		await runTest(setShelfKoboSync({ userId, shelfId, enabled: true }));
-		let settings = await runTest(listShelfKoboSyncSettings(userId));
+		await runTest(
+			ShelfService.setShelfKoboSync({ userId, shelfId, enabled: true }),
+		);
+		let settings = await runTest(
+			ShelfService.listShelfKoboSyncSettings(userId),
+		);
 		expect(settings[0]?.enableKoboSync).toBe(true);
 
-		await runTest(setShelfKoboSync({ userId, shelfId, enabled: false }));
-		settings = await runTest(listShelfKoboSyncSettings(userId));
+		await runTest(
+			ShelfService.setShelfKoboSync({ userId, shelfId, enabled: false }),
+		);
+		settings = await runTest(ShelfService.listShelfKoboSyncSettings(userId));
 		expect(settings[0]?.enableKoboSync).toBe(false);
 	});
 });

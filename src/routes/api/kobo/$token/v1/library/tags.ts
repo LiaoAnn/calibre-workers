@@ -9,7 +9,7 @@ import {
 	parseCreateTagBody,
 } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import { createOrUpdateKoboTag } from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/tags")({
 	server: {
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/tags")({
 							);
 						}
 
-						const result = yield* createOrUpdateKoboTag({
+						const result = yield* KoboService.createOrUpdateKoboTag({
 							userId: koboAuth.userId,
 							name: parsedBody.name,
 							revisionIds: parsedBody.revisionIds,

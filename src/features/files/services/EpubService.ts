@@ -2,7 +2,7 @@ import "@tanstack/react-start/server-only";
 
 import { Data, Effect } from "effect";
 import { inflateSync, strFromU8 } from "fflate";
-import { getBookFileRange } from "#/features/files/services/FileService";
+import { FileService } from "#/features/files/services/FileService";
 
 class ParseError extends Data.TaggedError("ParseError")<{
 	readonly stage: string;
@@ -285,428 +285,440 @@ const parseCentralDirectoryEntries = (
 	return entries;
 };
 
-export const parseEpubMetadataAndCoverFromR2 = ({ r2Key }: { r2Key: string }) =>
-	Effect.gen(function* () {
-		const readRange = (range: R2Range, stage: string) =>
-			getBookFileRange({ r2Key, range }).pipe(
-				Effect.mapError((cause) => toParseError(stage, cause)),
-			);
+export class EpubService extends Effect.Service<EpubService>()("EpubService", {
+	accessors: true,
+	dependencies: [FileService.Default],
+	effect: Effect.gen(function* () {
+		const files = yield* FileService;
 
-		const readFixedRange = (offset: number, length: number, stage: string) =>
-			readRange({ offset, length }, stage).pipe(
-				Effect.flatMap((bytes) =>
-					bytes.byteLength === length
-						? Effect.succeed(bytes)
-						: Effect.fail(
-								toParseError(
-									stage,
-									`Incomplete range read. Expected ${length} bytes, got ${bytes.byteLength}`,
+		const parseEpubMetadataAndCoverFromR2 = Effect.fn(
+			"EpubService.parseEpubMetadataAndCoverFromR2",
+		)(function* ({ r2Key }: { r2Key: string }) {
+			const readRange = (range: R2Range, stage: string) =>
+				files
+					.getBookFileRange({ r2Key, range })
+					.pipe(Effect.mapError((cause) => toParseError(stage, cause)));
+
+			const readFixedRange = (offset: number, length: number, stage: string) =>
+				readRange({ offset, length }, stage).pipe(
+					Effect.flatMap((bytes) =>
+						bytes.byteLength === length
+							? Effect.succeed(bytes)
+							: Effect.fail(
+									toParseError(
+										stage,
+										`Incomplete range read. Expected ${length} bytes, got ${bytes.byteLength}`,
+									),
 								),
-							),
-				),
-			);
-
-		// ZIP 的目錄在檔案尾端，先讀尾端即可取得完整索引位置。
-		const eocdTail = yield* readRange(
-			{ suffix: ZIP_EOCD_SUFFIX_BYTES },
-			"epub.range.tail",
-		);
-
-		if (eocdTail.byteLength < ZIP_EOCD_MIN_BYTES) {
-			return yield* Effect.fail(
-				toParseError("epub.range.tail", "ZIP tail is too short"),
-			);
-		}
-
-		const eocdOffset = yield* Effect.try({
-			try: () => findEndOfCentralDirectoryOffset(eocdTail),
-			catch: (cause) => toParseError("epub.zip.eocd", cause),
-		});
-
-		const centralDirectorySize = readUInt32LE(eocdTail, eocdOffset + 12);
-		const centralDirectoryOffset = readUInt32LE(eocdTail, eocdOffset + 16);
-		const diskNumber = readUInt16LE(eocdTail, eocdOffset + 4);
-		const centralDirDiskNumber = readUInt16LE(eocdTail, eocdOffset + 6);
-		const zipCommentLength = readUInt16LE(eocdTail, eocdOffset + 20);
-
-		if (zipCommentLength > ZIP_EOCD_MAX_COMMENT_BYTES) {
-			return yield* Effect.fail(
-				toParseError("epub.zip.eocd", "ZIP comment exceeds max length"),
-			);
-		}
-
-		if (diskNumber !== 0 || centralDirDiskNumber !== 0) {
-			return yield* Effect.fail(
-				toParseError(
-					"epub.zip.eocd",
-					"Multi-disk ZIP archives are not supported",
-				),
-			);
-		}
-
-		if (
-			centralDirectorySize === ZIP32_LIMIT ||
-			centralDirectoryOffset === ZIP32_LIMIT
-		) {
-			return yield* Effect.fail(
-				toParseError("epub.zip.eocd", "ZIP64 archives are not supported"),
-			);
-		}
-
-		if (
-			centralDirectorySize <= 0 ||
-			centralDirectorySize > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
-		) {
-			return yield* Effect.fail(
-				toParseError(
-					"epub.zip.centralDirectory",
-					`Unexpected central directory size: ${centralDirectorySize}`,
-				),
-			);
-		}
-
-		const centralDirectoryBytes = yield* readFixedRange(
-			centralDirectoryOffset,
-			centralDirectorySize,
-			"epub.range.centralDirectory",
-		);
-
-		const indexedEntries = yield* Effect.try({
-			try: () => parseCentralDirectoryEntries(centralDirectoryBytes),
-			catch: (cause) => toParseError("epub.zip.centralDirectory", cause),
-		});
-
-		if (indexedEntries.length === 0) {
-			return yield* Effect.fail(
-				toParseError("epub.zip.centralDirectory", "No ZIP entries found"),
-			);
-		}
-
-		const entriesByPath = new Map<string, ZipCentralDirectoryEntry>();
-		const entriesByPathLower = new Map<string, string>();
-		for (const entry of indexedEntries) {
-			entriesByPath.set(entry.path, entry);
-			entriesByPathLower.set(entry.path.toLowerCase(), entry.path);
-		}
-
-		const resolveIndexedPath = (path: string): string | undefined => {
-			const normalizedPath = normalizeZipPath(path);
-			const noDotPrefix = normalizedPath.replace(/^\.\//, "");
-
-			return (
-				(entriesByPath.has(normalizedPath) ? normalizedPath : undefined) ??
-				(entriesByPath.has(noDotPrefix) ? noDotPrefix : undefined) ??
-				entriesByPathLower.get(normalizedPath.toLowerCase()) ??
-				entriesByPathLower.get(noDotPrefix.toLowerCase())
-			);
-		};
-
-		const entryContentCache = new Map<string, Uint8Array>();
-
-		const readEntryContent = (path: string, stage: string) =>
-			Effect.gen(function* () {
-				const resolvedPath = resolveIndexedPath(path);
-				if (!resolvedPath) {
-					return yield* Effect.fail(
-						toParseError(stage, `ZIP entry not found: ${path}`),
-					);
-				}
-
-				const cached = entryContentCache.get(resolvedPath);
-				if (cached) {
-					return cached;
-				}
-
-				const entry = entriesByPath.get(resolvedPath);
-				if (!entry) {
-					return yield* Effect.fail(
-						toParseError(stage, `ZIP entry index missing: ${resolvedPath}`),
-					);
-				}
-
-				if (entry.compressedSize > ZIP_MAX_ENTRY_COMPRESSED_BYTES) {
-					return yield* Effect.fail(
-						toParseError(
-							stage,
-							`ZIP entry is too large to parse safely: ${entry.path}`,
-						),
-					);
-				}
-
-				// 先讀 local file header，才能知道壓縮資料的實際起點。
-				const localHeaderBytes = yield* readFixedRange(
-					entry.localHeaderOffset,
-					30,
-					`${stage}.localHeader`,
+					),
 				);
 
-				if (
-					readUInt32LE(localHeaderBytes, 0) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE
-				) {
-					return yield* Effect.fail(
-						toParseError(stage, "Invalid ZIP local file header signature"),
-					);
-				}
+			// ZIP 的目錄在檔案尾端，先讀尾端即可取得完整索引位置。
+			const eocdTail = yield* readRange(
+				{ suffix: ZIP_EOCD_SUFFIX_BYTES },
+				"epub.range.tail",
+			);
 
-				const localFileNameLength = readUInt16LE(localHeaderBytes, 26);
-				const localExtraFieldLength = readUInt16LE(localHeaderBytes, 28);
-				const entryDataOffset =
-					entry.localHeaderOffset +
-					30 +
-					localFileNameLength +
-					localExtraFieldLength;
+			if (eocdTail.byteLength < ZIP_EOCD_MIN_BYTES) {
+				return yield* Effect.fail(
+					toParseError("epub.range.tail", "ZIP tail is too short"),
+				);
+			}
 
-				const compressedBytes =
-					entry.compressedSize === 0
-						? new Uint8Array(0)
-						: yield* readFixedRange(
-								entryDataOffset,
-								entry.compressedSize,
-								`${stage}.entryBody`,
-							);
-
-				const data = yield* Effect.try({
-					try: () => {
-						switch (entry.compressionMethod) {
-							case 0:
-								return compressedBytes;
-							case 8:
-								return inflateSync(compressedBytes);
-							default:
-								throw new Error(
-									`Unsupported ZIP compression method: ${entry.compressionMethod}`,
-								);
-						}
-					},
-					catch: (cause) => toParseError(`${stage}.inflate`, cause),
-				});
-
-				if (data.byteLength > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
-					return yield* Effect.fail(
-						toParseError(
-							stage,
-							`ZIP entry inflated data is too large: ${entry.path}`,
-						),
-					);
-				}
-
-				if (
-					entry.uncompressedSize !== ZIP32_LIMIT &&
-					data.byteLength !== entry.uncompressedSize
-				) {
-					return yield* Effect.fail(
-						toParseError(stage, `ZIP entry size mismatch: ${entry.path}`),
-					);
-				}
-
-				entryContentCache.set(resolvedPath, data);
-				return data;
+			const eocdOffset = yield* Effect.try({
+				try: () => findEndOfCentralDirectoryOffset(eocdTail),
+				catch: (cause) => toParseError("epub.zip.eocd", cause),
 			});
 
-		const readEntryText = (path: string, stage: string) =>
-			readEntryContent(path, stage).pipe(
-				Effect.map((bytes) => strFromU8(bytes)),
-			);
+			const centralDirectorySize = readUInt32LE(eocdTail, eocdOffset + 12);
+			const centralDirectoryOffset = readUInt32LE(eocdTail, eocdOffset + 16);
+			const diskNumber = readUInt16LE(eocdTail, eocdOffset + 4);
+			const centralDirDiskNumber = readUInt16LE(eocdTail, eocdOffset + 6);
+			const zipCommentLength = readUInt16LE(eocdTail, eocdOffset + 20);
 
-		const containerPath = resolveIndexedPath("META-INF/container.xml");
-		let opfPath: string | undefined;
-
-		if (containerPath) {
-			const containerXml = yield* readEntryText(
-				containerPath,
-				"epub.container",
-			);
-			const match = /full-path\s*=\s*["']([^"']+)["']/i.exec(containerXml);
-			if (match?.[1]) {
-				opfPath = resolveIndexedPath(match[1]);
+			if (zipCommentLength > ZIP_EOCD_MAX_COMMENT_BYTES) {
+				return yield* Effect.fail(
+					toParseError("epub.zip.eocd", "ZIP comment exceeds max length"),
+				);
 			}
-		}
 
-		if (!opfPath) {
-			opfPath = Array.from(entriesByPath.keys()).find((path) =>
-				path.toLowerCase().endsWith(".opf"),
+			if (diskNumber !== 0 || centralDirDiskNumber !== 0) {
+				return yield* Effect.fail(
+					toParseError(
+						"epub.zip.eocd",
+						"Multi-disk ZIP archives are not supported",
+					),
+				);
+			}
+
+			if (
+				centralDirectorySize === ZIP32_LIMIT ||
+				centralDirectoryOffset === ZIP32_LIMIT
+			) {
+				return yield* Effect.fail(
+					toParseError("epub.zip.eocd", "ZIP64 archives are not supported"),
+				);
+			}
+
+			if (
+				centralDirectorySize <= 0 ||
+				centralDirectorySize > ZIP_MAX_CENTRAL_DIRECTORY_BYTES
+			) {
+				return yield* Effect.fail(
+					toParseError(
+						"epub.zip.centralDirectory",
+						`Unexpected central directory size: ${centralDirectorySize}`,
+					),
+				);
+			}
+
+			const centralDirectoryBytes = yield* readFixedRange(
+				centralDirectoryOffset,
+				centralDirectorySize,
+				"epub.range.centralDirectory",
 			);
-		}
 
-		if (!opfPath) {
-			return yield* Effect.fail(
-				toParseError(
-					"epub.opf",
-					"Invalid EPUB: missing package document (.opf)",
-				),
-			);
-		}
+			const indexedEntries = yield* Effect.try({
+				try: () => parseCentralDirectoryEntries(centralDirectoryBytes),
+				catch: (cause) => toParseError("epub.zip.centralDirectory", cause),
+			});
 
-		const opfXml = yield* readEntryText(opfPath, "epub.opf");
-		const metadata = yield* Effect.try({
-			try: () => parseMetadataFromOpfXml(opfXml),
-			catch: (cause) => toParseError("epub.metadata", cause),
-		});
+			if (indexedEntries.length === 0) {
+				return yield* Effect.fail(
+					toParseError("epub.zip.centralDirectory", "No ZIP entries found"),
+				);
+			}
 
-		const cover = yield* Effect.gen(function* () {
-			const opfDir = opfPath.includes("/")
-				? opfPath.substring(0, opfPath.lastIndexOf("/") + 1)
-				: "";
+			const entriesByPath = new Map<string, ZipCentralDirectoryEntry>();
+			const entriesByPathLower = new Map<string, string>();
+			for (const entry of indexedEntries) {
+				entriesByPath.set(entry.path, entry);
+				entriesByPathLower.set(entry.path.toLowerCase(), entry.path);
+			}
 
-			let coverHref: string | undefined;
-			let coverMimeType: string | undefined;
-			const itemTags = opfXml.match(/<item\b[^>]*>/gi) ?? [];
-			const manifestItems = itemTags
-				.map((tag) => ({
-					id: getXmlAttr(tag, "id"),
-					href: getXmlAttr(tag, "href"),
-					mediaType: getXmlAttr(tag, "media-type"),
-					properties: getXmlAttr(tag, "properties"),
-				}))
-				.filter((item) => !!item.href);
+			const resolveIndexedPath = (path: string): string | undefined => {
+				const normalizedPath = normalizeZipPath(path);
+				const noDotPrefix = normalizedPath.replace(/^\.\//, "");
 
-			const findManifestItemByHref = (href: string, baseDir = opfDir) => {
-				const targetPath = normalizeEntryPath(baseDir, href);
-				return manifestItems.find((item) => {
-					if (!item.href) return false;
-					return normalizeEntryPath(opfDir, item.href) === targetPath;
-				});
+				return (
+					(entriesByPath.has(normalizedPath) ? normalizedPath : undefined) ??
+					(entriesByPath.has(noDotPrefix) ? noDotPrefix : undefined) ??
+					entriesByPathLower.get(normalizedPath.toLowerCase()) ??
+					entriesByPathLower.get(noDotPrefix.toLowerCase())
+				);
 			};
 
-			const epub3Item = manifestItems.find((item) => {
-				const properties = item.properties;
-				return properties
-					? properties.split(/\s+/).includes("cover-image")
-					: false;
-			});
-			if (epub3Item) {
-				coverHref = epub3Item.href;
-				coverMimeType = epub3Item.mediaType;
-			}
+			const entryContentCache = new Map<string, Uint8Array>();
 
-			if (!coverHref) {
-				const idItem = manifestItems.find((item) => {
-					const id = item.id?.toLowerCase();
-					return id === "cover-image" || id === "cover";
+			const readEntryContent = (path: string, stage: string) =>
+				Effect.gen(function* () {
+					const resolvedPath = resolveIndexedPath(path);
+					if (!resolvedPath) {
+						return yield* Effect.fail(
+							toParseError(stage, `ZIP entry not found: ${path}`),
+						);
+					}
+
+					const cached = entryContentCache.get(resolvedPath);
+					if (cached) {
+						return cached;
+					}
+
+					const entry = entriesByPath.get(resolvedPath);
+					if (!entry) {
+						return yield* Effect.fail(
+							toParseError(stage, `ZIP entry index missing: ${resolvedPath}`),
+						);
+					}
+
+					if (entry.compressedSize > ZIP_MAX_ENTRY_COMPRESSED_BYTES) {
+						return yield* Effect.fail(
+							toParseError(
+								stage,
+								`ZIP entry is too large to parse safely: ${entry.path}`,
+							),
+						);
+					}
+
+					// 先讀 local file header，才能知道壓縮資料的實際起點。
+					const localHeaderBytes = yield* readFixedRange(
+						entry.localHeaderOffset,
+						30,
+						`${stage}.localHeader`,
+					);
+
+					if (
+						readUInt32LE(localHeaderBytes, 0) !==
+						ZIP_LOCAL_FILE_HEADER_SIGNATURE
+					) {
+						return yield* Effect.fail(
+							toParseError(stage, "Invalid ZIP local file header signature"),
+						);
+					}
+
+					const localFileNameLength = readUInt16LE(localHeaderBytes, 26);
+					const localExtraFieldLength = readUInt16LE(localHeaderBytes, 28);
+					const entryDataOffset =
+						entry.localHeaderOffset +
+						30 +
+						localFileNameLength +
+						localExtraFieldLength;
+
+					const compressedBytes =
+						entry.compressedSize === 0
+							? new Uint8Array(0)
+							: yield* readFixedRange(
+									entryDataOffset,
+									entry.compressedSize,
+									`${stage}.entryBody`,
+								);
+
+					const data = yield* Effect.try({
+						try: () => {
+							switch (entry.compressionMethod) {
+								case 0:
+									return compressedBytes;
+								case 8:
+									return inflateSync(compressedBytes);
+								default:
+									throw new Error(
+										`Unsupported ZIP compression method: ${entry.compressionMethod}`,
+									);
+							}
+						},
+						catch: (cause) => toParseError(`${stage}.inflate`, cause),
+					});
+
+					if (data.byteLength > ZIP_MAX_ENTRY_UNCOMPRESSED_BYTES) {
+						return yield* Effect.fail(
+							toParseError(
+								stage,
+								`ZIP entry inflated data is too large: ${entry.path}`,
+							),
+						);
+					}
+
+					if (
+						entry.uncompressedSize !== ZIP32_LIMIT &&
+						data.byteLength !== entry.uncompressedSize
+					) {
+						return yield* Effect.fail(
+							toParseError(stage, `ZIP entry size mismatch: ${entry.path}`),
+						);
+					}
+
+					entryContentCache.set(resolvedPath, data);
+					return data;
 				});
-				if (idItem) {
-					coverHref = idItem.href;
-					coverMimeType = idItem.mediaType;
+
+			const readEntryText = (path: string, stage: string) =>
+				readEntryContent(path, stage).pipe(
+					Effect.map((bytes) => strFromU8(bytes)),
+				);
+
+			const containerPath = resolveIndexedPath("META-INF/container.xml");
+			let opfPath: string | undefined;
+
+			if (containerPath) {
+				const containerXml = yield* readEntryText(
+					containerPath,
+					"epub.container",
+				);
+				const match = /full-path\s*=\s*["']([^"']+)["']/i.exec(containerXml);
+				if (match?.[1]) {
+					opfPath = resolveIndexedPath(match[1]);
 				}
 			}
 
-			if (!coverHref) {
-				const metaTags = opfXml.match(/<meta\b[^>]*>/gi) ?? [];
-				const coverMeta = metaTags.find(
-					(tag) => getXmlAttr(tag, "name")?.toLowerCase() === "cover",
+			if (!opfPath) {
+				opfPath = Array.from(entriesByPath.keys()).find((path) =>
+					path.toLowerCase().endsWith(".opf"),
 				);
-				const coverId = coverMeta
-					? getXmlAttr(coverMeta, "content")
-					: undefined;
+			}
 
-				if (coverId) {
-					const item = manifestItems.find(
-						(item) => item.id?.toLowerCase() === coverId.toLowerCase(),
-					);
-					if (item) {
-						coverHref = item.href;
-						coverMimeType = item.mediaType;
+			if (!opfPath) {
+				return yield* Effect.fail(
+					toParseError(
+						"epub.opf",
+						"Invalid EPUB: missing package document (.opf)",
+					),
+				);
+			}
+
+			const opfXml = yield* readEntryText(opfPath, "epub.opf");
+			const metadata = yield* Effect.try({
+				try: () => parseMetadataFromOpfXml(opfXml),
+				catch: (cause) => toParseError("epub.metadata", cause),
+			});
+
+			const cover = yield* Effect.gen(function* () {
+				const opfDir = opfPath.includes("/")
+					? opfPath.substring(0, opfPath.lastIndexOf("/") + 1)
+					: "";
+
+				let coverHref: string | undefined;
+				let coverMimeType: string | undefined;
+				const itemTags = opfXml.match(/<item\b[^>]*>/gi) ?? [];
+				const manifestItems = itemTags
+					.map((tag) => ({
+						id: getXmlAttr(tag, "id"),
+						href: getXmlAttr(tag, "href"),
+						mediaType: getXmlAttr(tag, "media-type"),
+						properties: getXmlAttr(tag, "properties"),
+					}))
+					.filter((item) => !!item.href);
+
+				const findManifestItemByHref = (href: string, baseDir = opfDir) => {
+					const targetPath = normalizeEntryPath(baseDir, href);
+					return manifestItems.find((item) => {
+						if (!item.href) return false;
+						return normalizeEntryPath(opfDir, item.href) === targetPath;
+					});
+				};
+
+				const epub3Item = manifestItems.find((item) => {
+					const properties = item.properties;
+					return properties
+						? properties.split(/\s+/).includes("cover-image")
+						: false;
+				});
+				if (epub3Item) {
+					coverHref = epub3Item.href;
+					coverMimeType = epub3Item.mediaType;
+				}
+
+				if (!coverHref) {
+					const idItem = manifestItems.find((item) => {
+						const id = item.id?.toLowerCase();
+						return id === "cover-image" || id === "cover";
+					});
+					if (idItem) {
+						coverHref = idItem.href;
+						coverMimeType = idItem.mediaType;
 					}
 				}
-			}
 
-			if (!coverHref) {
-				const guideReferenceTags = opfXml.match(/<reference\b[^>]*>/gi) ?? [];
-				const coverReference = guideReferenceTags.find((tag) =>
-					(getXmlAttr(tag, "type") ?? "").toLowerCase().includes("cover"),
-				);
-
-				if (coverReference) {
-					coverHref = getXmlAttr(coverReference, "href");
-					const guideManifestItem = coverHref
-						? findManifestItemByHref(coverHref)
-						: undefined;
-					coverMimeType = guideManifestItem?.mediaType;
-				}
-			}
-
-			if (!coverHref) {
-				const manifestCoverItem = manifestItems.find((item) => {
-					const id = (item.id ?? "").toLowerCase();
-					const href = (item.href ?? "").toLowerCase();
-					const mediaType = (item.mediaType ?? "").toLowerCase();
-
-					return (
-						mediaType.startsWith("image/") &&
-						(id.includes("cover") || href.includes("cover"))
+				if (!coverHref) {
+					const metaTags = opfXml.match(/<meta\b[^>]*>/gi) ?? [];
+					const coverMeta = metaTags.find(
+						(tag) => getXmlAttr(tag, "name")?.toLowerCase() === "cover",
 					);
-				});
+					const coverId = coverMeta
+						? getXmlAttr(coverMeta, "content")
+						: undefined;
 
-				if (manifestCoverItem) {
-					coverHref = manifestCoverItem.href;
-					coverMimeType = manifestCoverItem.mediaType;
+					if (coverId) {
+						const item = manifestItems.find(
+							(item) => item.id?.toLowerCase() === coverId.toLowerCase(),
+						);
+						if (item) {
+							coverHref = item.href;
+							coverMimeType = item.mediaType;
+						}
+					}
 				}
-			}
 
-			if (!coverHref) {
+				if (!coverHref) {
+					const guideReferenceTags = opfXml.match(/<reference\b[^>]*>/gi) ?? [];
+					const coverReference = guideReferenceTags.find((tag) =>
+						(getXmlAttr(tag, "type") ?? "").toLowerCase().includes("cover"),
+					);
+
+					if (coverReference) {
+						coverHref = getXmlAttr(coverReference, "href");
+						const guideManifestItem = coverHref
+							? findManifestItemByHref(coverHref)
+							: undefined;
+						coverMimeType = guideManifestItem?.mediaType;
+					}
+				}
+
+				if (!coverHref) {
+					const manifestCoverItem = manifestItems.find((item) => {
+						const id = (item.id ?? "").toLowerCase();
+						const href = (item.href ?? "").toLowerCase();
+						const mediaType = (item.mediaType ?? "").toLowerCase();
+
+						return (
+							mediaType.startsWith("image/") &&
+							(id.includes("cover") || href.includes("cover"))
+						);
+					});
+
+					if (manifestCoverItem) {
+						coverHref = manifestCoverItem.href;
+						coverMimeType = manifestCoverItem.mediaType;
+					}
+				}
+
+				if (!coverHref) {
+					return undefined;
+				}
+
+				let currentHref = coverHref;
+				let currentBaseDir = opfDir;
+				let currentMimeType = coverMimeType;
+
+				for (let depth = 0; depth < 3; depth += 1) {
+					const candidatePath = normalizeEntryPath(currentBaseDir, currentHref);
+					const resolvedPath = resolveIndexedPath(candidatePath);
+					if (!resolvedPath) {
+						return undefined;
+					}
+
+					const data = yield* readEntryContent(resolvedPath, "epub.cover");
+
+					const manifestItem = findManifestItemByHref(
+						currentHref,
+						currentBaseDir,
+					);
+					const resolvedMimeType =
+						currentMimeType ??
+						manifestItem?.mediaType ??
+						inferCoverMimeTypeFromPath(resolvedPath);
+
+					if (!isContentDocumentReference(resolvedPath, resolvedMimeType)) {
+						const finalMimeType = resolvedMimeType
+							.toLowerCase()
+							.startsWith("image/")
+							? resolvedMimeType
+							: inferCoverMimeTypeFromPath(resolvedPath);
+
+						return {
+							data,
+							mimeType: finalMimeType,
+						};
+					}
+
+					const contentDocMarkup = strFromU8(data);
+					const embeddedCoverHref =
+						extractImageHrefFromContentDocument(contentDocMarkup);
+					if (!embeddedCoverHref) {
+						return undefined;
+					}
+
+					currentBaseDir = resolvedPath.includes("/")
+						? resolvedPath.substring(0, resolvedPath.lastIndexOf("/") + 1)
+						: "";
+					currentHref = embeddedCoverHref;
+					currentMimeType = findManifestItemByHref(
+						embeddedCoverHref,
+						currentBaseDir,
+					)?.mediaType;
+				}
+
 				return undefined;
-			}
+			}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
 
-			let currentHref = coverHref;
-			let currentBaseDir = opfDir;
-			let currentMimeType = coverMimeType;
+			return {
+				metadata,
+				cover,
+			};
+		});
 
-			for (let depth = 0; depth < 3; depth += 1) {
-				const candidatePath = normalizeEntryPath(currentBaseDir, currentHref);
-				const resolvedPath = resolveIndexedPath(candidatePath);
-				if (!resolvedPath) {
-					return undefined;
-				}
-
-				const data = yield* readEntryContent(resolvedPath, "epub.cover");
-
-				const manifestItem = findManifestItemByHref(
-					currentHref,
-					currentBaseDir,
-				);
-				const resolvedMimeType =
-					currentMimeType ??
-					manifestItem?.mediaType ??
-					inferCoverMimeTypeFromPath(resolvedPath);
-
-				if (!isContentDocumentReference(resolvedPath, resolvedMimeType)) {
-					const finalMimeType = resolvedMimeType
-						.toLowerCase()
-						.startsWith("image/")
-						? resolvedMimeType
-						: inferCoverMimeTypeFromPath(resolvedPath);
-
-					return {
-						data,
-						mimeType: finalMimeType,
-					};
-				}
-
-				const contentDocMarkup = strFromU8(data);
-				const embeddedCoverHref =
-					extractImageHrefFromContentDocument(contentDocMarkup);
-				if (!embeddedCoverHref) {
-					return undefined;
-				}
-
-				currentBaseDir = resolvedPath.includes("/")
-					? resolvedPath.substring(0, resolvedPath.lastIndexOf("/") + 1)
-					: "";
-				currentHref = embeddedCoverHref;
-				currentMimeType = findManifestItemByHref(
-					embeddedCoverHref,
-					currentBaseDir,
-				)?.mediaType;
-			}
-
-			return undefined;
-		}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
-
-		return {
-			metadata,
-			cover,
-		};
-	});
+		return { parseEpubMetadataAndCoverFromR2 };
+	}),
+}) {}
 
 function getXmlAttr(tag: string, name: string): string | undefined {
 	const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

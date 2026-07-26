@@ -1,17 +1,9 @@
 import "@tanstack/react-start/server-only";
 
 import { Cause, Duration, Effect, Exit } from "effect";
-import { getBookMetadataForProcess } from "#/features/books/services/BookService";
-import {
-	createBookFile,
-	getConversionJob,
-	updateConversionJobStatus,
-} from "#/features/conversion/services/ConversionService";
-import {
-	getBookFile,
-	getBookFileRecord,
-	uploadBookFile,
-} from "#/features/files/services/FileService";
+import { BookService } from "#/features/books/services/BookService";
+import { ConversionService } from "#/features/conversion/services/ConversionService";
+import { FileService } from "#/features/files/services/FileService";
 import type { BookFileFormat } from "#/shared/db/schema";
 import { QueueRuntime } from "#/shared/layers/AppRuntime";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
@@ -49,7 +41,7 @@ function mimeTypeForFormat(format: string) {
 
 const runConversionJob = (jobId: string) =>
 	Effect.gen(function* () {
-		const job = yield* getConversionJob(jobId);
+		const job = yield* ConversionService.getConversionJob(jobId);
 
 		if (!isBookFileFormat(job.targetFormat)) {
 			return yield* Effect.fail(
@@ -57,18 +49,25 @@ const runConversionJob = (jobId: string) =>
 			);
 		}
 
-		yield* updateConversionJobStatus(jobId, { status: "processing" });
+		yield* ConversionService.updateConversionJobStatus(jobId, {
+			status: "processing",
+		});
 
-		const fileRecord = yield* getBookFileRecord(job.bookId, job.sourceFileId);
+		const fileRecord = yield* FileService.getBookFileRecord(
+			job.bookId,
+			job.sourceFileId,
+		);
 
-		const r2Object = yield* getBookFile(fileRecord.r2Key);
+		const r2Object = yield* FileService.getBookFile(fileRecord.r2Key);
 
 		const container = yield* ConverterContainerContext;
-		const latestMetadata = yield* getBookMetadataForProcess(job.bookId);
+		const latestMetadata = yield* BookService.getBookMetadataForProcess(
+			job.bookId,
+		);
 		const { hasCover, ...metadataForContainer } = latestMetadata;
 		const cover = hasCover
 			? yield* Effect.gen(function* () {
-					const coverObject = yield* getBookFile(
+					const coverObject = yield* FileService.getBookFile(
 						r2Keys.bookCover({ bookId: job.bookId }),
 					);
 					// Covers are small (< 5 MB) — safe to buffer in Worker memory
@@ -109,7 +108,7 @@ const runConversionJob = (jobId: string) =>
 			fileName: resultFileName,
 		});
 
-		yield* uploadBookFile({
+		yield* FileService.uploadBookFile({
 			r2Key: resultR2Key,
 			body: processed.body,
 			contentType: processed.contentType || mimeTypeForFormat(job.targetFormat),
@@ -118,11 +117,11 @@ const runConversionJob = (jobId: string) =>
 
 		// Use r2Object.size (source file from R2) when Content-Length is missing
 		// from the container response. The final accurate size comes from R2 after
-		// the streamed upload; however createBookFile only needs a best-effort hint
+		// the streamed upload; however ConversionService.createBookFile only needs a best-effort hint
 		// because the file is already persisted.  When the container sets
 		// Content-Length correctly (the Go handler always does) processed.size is
 		// accurate.
-		const { fileId: resultFileId } = yield* createBookFile({
+		const { fileId: resultFileId } = yield* ConversionService.createBookFile({
 			bookId: job.bookId,
 			format: job.targetFormat,
 			fileName: resultFileName,
@@ -131,7 +130,7 @@ const runConversionJob = (jobId: string) =>
 			mimeType: processed.contentType || mimeTypeForFormat(job.targetFormat),
 		});
 
-		yield* updateConversionJobStatus(jobId, {
+		yield* ConversionService.updateConversionJobStatus(jobId, {
 			status: "done",
 			resultFileId,
 		});
@@ -147,7 +146,7 @@ const settleConversionFailure = ({
 	message: Message<ConversionQueueMessage>;
 }) =>
 	Effect.gen(function* () {
-		yield* updateConversionJobStatus(jobId, {
+		yield* ConversionService.updateConversionJobStatus(jobId, {
 			status: "failed",
 			errorMessage,
 		}).pipe(Effect.catchAll(() => Effect.void));
@@ -196,7 +195,7 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 						causePretty,
 					);
 
-					yield* updateConversionJobStatus(jobId, {
+					yield* ConversionService.updateConversionJobStatus(jobId, {
 						status: "failed",
 						errorMessage: causePretty,
 					}).pipe(Effect.catchAll(() => Effect.void));

@@ -21,10 +21,9 @@ import {
 	toBase64,
 } from "#/features/kobo/lib/kobo.server";
 import * as schema from "#/shared/db/schema";
+import type { AppServices } from "#/shared/layers/AppLayer";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
-import type { DatabaseContext as DatabaseContextType } from "#/shared/layers/DatabaseLayer";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
-import type { R2Context } from "#/shared/layers/R2Layer";
 
 class KoboAuthTokenNotFound extends Data.TaggedError("KoboAuthTokenNotFound")<{
 	readonly token: string;
@@ -288,11 +287,7 @@ export const withKoboAuth = async <
 	input: TInput,
 	handler: (
 		authorizedInput: KoboAuthorizedHandlerInput<TInput>,
-	) => Effect.Effect<
-		KoboHandlerOutput,
-		KoboHandledError,
-		DatabaseContextType | R2Context
-	>,
+	) => Effect.Effect<KoboHandlerOutput, KoboHandledError, AppServices>,
 ): Promise<Response> => {
 	const normalizedParams = normalizeParams<TInput["params"]>(input.params);
 	if (!normalizedParams) {

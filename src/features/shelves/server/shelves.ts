@@ -6,21 +6,10 @@ import type {
 	ShelfAccessDenied,
 	ShelfNotFound,
 } from "#/features/shelves/services/ShelfService";
-import {
-	addBooksToShelf,
-	createShelf,
-	deleteShelf,
-	listBookShelfIds,
-	listShelfBooks,
-	listShelfKoboSyncSettings,
-	listShelves,
-	removeBookFromShelf,
-	setShelfKoboSync,
-	updateShelf,
-} from "#/features/shelves/services/ShelfService";
+import { ShelfService } from "#/features/shelves/services/ShelfService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
+import type { AppServices } from "#/shared/layers/AppLayer";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
-import type { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 
 interface ShelfByIdInput {
 	shelfId: string;
@@ -59,7 +48,7 @@ const runShelfEffect = <T>(
 	effect: Effect.Effect<
 		T,
 		ShelfNotFound | ShelfAccessDenied | InvalidShelfName | SqlError,
-		DatabaseContext
+		AppServices
 	>,
 ): Promise<T> =>
 	ServerRuntime.runPromise(
@@ -82,7 +71,7 @@ const runShelfEffect = <T>(
 export const listShelvesServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.handler(async ({ context }) => {
-		return runShelfEffect(listShelves(context.session.user.id));
+		return runShelfEffect(ShelfService.listShelves(context.session.user.id));
 	});
 
 export const listBookShelfIdsServerFn = createServerFn({ method: "GET" })
@@ -90,7 +79,7 @@ export const listBookShelfIdsServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: BookShelfIdsInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			listBookShelfIds({
+			ShelfService.listBookShelfIds({
 				userId: context.session.user.id,
 				bookId: data.bookId,
 			}),
@@ -102,7 +91,7 @@ export const createShelfServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: CreateShelfInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			createShelf({
+			ShelfService.createShelf({
 				userId: context.session.user.id,
 				name: data.name,
 			}),
@@ -114,7 +103,7 @@ export const getShelfBooksServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: ShelfBooksInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			listShelfBooks({
+			ShelfService.listShelfBooks({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 				page: data.page,
@@ -128,7 +117,7 @@ export const updateShelfServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: UpdateShelfInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			updateShelf({
+			ShelfService.updateShelf({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 				name: data.name,
@@ -141,7 +130,7 @@ export const deleteShelfServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: ShelfByIdInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			deleteShelf({
+			ShelfService.deleteShelf({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 			}),
@@ -153,7 +142,7 @@ export const addBooksToShelfServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: AddBooksInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			addBooksToShelf({
+			ShelfService.addBooksToShelf({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 				bookIds: data.bookIds,
@@ -166,7 +155,7 @@ export const removeBookFromShelfServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: RemoveBookInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			removeBookFromShelf({
+			ShelfService.removeBookFromShelf({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 				bookId: data.bookId,
@@ -181,7 +170,9 @@ export const listShelfKoboSyncSettingsServerFn = createServerFn({
 })
 	.middleware([requiredSessionMiddleware])
 	.handler(async ({ context }) => {
-		return runShelfEffect(listShelfKoboSyncSettings(context.session.user.id));
+		return runShelfEffect(
+			ShelfService.listShelfKoboSyncSettings(context.session.user.id),
+		);
 	});
 
 export const setShelfKoboSyncServerFn = createServerFn({ method: "POST" })
@@ -189,7 +180,7 @@ export const setShelfKoboSyncServerFn = createServerFn({ method: "POST" })
 	.inputValidator((input: SetShelfKoboSyncInput) => input)
 	.handler(async ({ data, context }) => {
 		return runShelfEffect(
-			setShelfKoboSync({
+			ShelfService.setShelfKoboSync({
 				userId: context.session.user.id,
 				shelfId: data.shelfId,
 				enabled: data.enabled,

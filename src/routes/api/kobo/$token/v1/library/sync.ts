@@ -9,9 +9,8 @@ import {
 } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
 import {
-	buildLocalLibrarySync,
 	copySyncHeadersFromUpstream,
-	createMissingKepubConversionJobs,
+	KoboService,
 	parseKoboSyncTokenFromHeaders,
 	setRawStoreSyncTokenFromResponse,
 	setSyncTokenHeader,
@@ -26,7 +25,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/sync")({
 						const syncToken = parseKoboSyncTokenFromHeaders(request.headers);
 						const origin = new URL(request.url).origin;
 
-						const localSync = yield* buildLocalLibrarySync({
+						const localSync = yield* KoboService.buildLocalLibrarySync({
 							userId: koboAuth.userId,
 							token: koboToken,
 							origin,
@@ -34,9 +33,10 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/sync")({
 						});
 
 						if (localSync.pendingConversions.length > 0) {
-							const jobIds = yield* createMissingKepubConversionJobs(
-								localSync.pendingConversions,
-							);
+							const jobIds =
+								yield* KoboService.createMissingKepubConversionJobs(
+									localSync.pendingConversions,
+								);
 
 							if (jobIds.length > 0) {
 								const enqueueResult = yield* Effect.either(

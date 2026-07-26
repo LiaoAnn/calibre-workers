@@ -5,7 +5,7 @@ import {
 	resolveKoboLocalOrProxy,
 } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import { setArchivedBookByUuid } from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute("/api/kobo/$token/v1/library/$bookUuid")({
 	server: {
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/$bookUuid")({
 				withKoboAuth(input, ({ request, params, koboToken, koboAuth }) =>
 					Effect.gen(function* () {
 						const archivedResult = yield* resolveKoboLocalOrProxy({
-							local: setArchivedBookByUuid({
+							local: KoboService.setArchivedBookByUuid({
 								userId: koboAuth.userId,
 								bookUuid: params.bookUuid,
 								isArchived: true,

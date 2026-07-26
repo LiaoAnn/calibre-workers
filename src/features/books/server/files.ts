@@ -10,20 +10,9 @@ import {
 	type CoverValidationIssue,
 	validateCoverFile,
 } from "#/features/books/lib/cover-validation";
-import {
-	createBookFromUpload,
-	deleteBook,
-} from "#/features/books/services/BookService";
-import { parseEpubMetadataAndCoverFromR2 } from "#/features/files/services/EpubService";
-import {
-	abortMultipartUpload,
-	completeMultipartUpload,
-	createMultipartUpload,
-	deleteBookFile,
-	getBookFile,
-	uploadBookFile,
-	uploadMultipartPart,
-} from "#/features/files/services/FileService";
+import { BookService } from "#/features/books/services/BookService";
+import { EpubService } from "#/features/files/services/EpubService";
+import { FileService } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import * as schema from "#/shared/db/schema";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
@@ -121,7 +110,7 @@ export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
 		}
 
 		await ServerRuntime.runPromise(
-			uploadBookFile({
+			FileService.uploadBookFile({
 				r2Key: tempR2Key,
 				body: bytes,
 				contentType: file.type || undefined,
@@ -200,7 +189,7 @@ export const createBookUploadSessionServerFn = createServerFn({
 				fileName,
 			});
 
-			const multipart = yield* createMultipartUpload({
+			const multipart = yield* FileService.createMultipartUpload({
 				r2Key: stagingR2Key,
 				contentType: data.mimeType || undefined,
 				customMetadata: {
@@ -305,7 +294,7 @@ export const uploadBookPartServerFn = createServerFn({ method: "POST" })
 				);
 			}
 
-			const uploadedPart = yield* uploadMultipartPart({
+			const uploadedPart = yield* FileService.uploadMultipartPart({
 				r2Key: task.stagingR2Key,
 				uploadId: task.multipartUploadId,
 				partNumber,
@@ -427,30 +416,30 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 			const performRollback = () =>
 				Effect.gen(function* () {
 					if (createdResources.fileR2Key) {
-						yield* deleteBookFile(createdResources.fileR2Key).pipe(
+						yield* FileService.deleteBookFile(createdResources.fileR2Key).pipe(
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
 
 					if (createdResources.coverR2Key) {
-						yield* deleteBookFile(createdResources.coverR2Key).pipe(
+						yield* FileService.deleteBookFile(createdResources.coverR2Key).pipe(
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
 
 					if (createdResources.bookId) {
-						yield* deleteBook(createdResources.bookId).pipe(
+						yield* BookService.deleteBook(createdResources.bookId).pipe(
 							Effect.catchAll(() => Effect.succeed(undefined)),
 						);
 					}
 
-					yield* deleteBookFile(stagingR2Key).pipe(
+					yield* FileService.deleteBookFile(stagingR2Key).pipe(
 						Effect.catchAll(() => Effect.succeed(undefined)),
 					);
 				});
 
 			const completeEffect = Effect.gen(function* () {
-				const completedObject = yield* completeMultipartUpload({
+				const completedObject = yield* FileService.completeMultipartUpload({
 					r2Key: stagingR2Key,
 					uploadId: multipartUploadId,
 					uploadedParts,
@@ -465,7 +454,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 					);
 				}
 
-				const parsedEpub = yield* parseEpubMetadataAndCoverFromR2({
+				const parsedEpub = yield* EpubService.parseEpubMetadataAndCoverFromR2({
 					r2Key: stagingR2Key,
 				});
 
@@ -479,14 +468,14 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 				);
 				const resolvedPubdate = resolvePubdate(parsedEpub.metadata.pubdate);
 
-				const stagedObject = yield* getBookFile(stagingR2Key);
+				const stagedObject = yield* FileService.getBookFile(stagingR2Key);
 				if (!stagedObject.body) {
 					return yield* Effect.fail(
 						new UploadError({ message: "Uploaded file body is empty" }),
 					);
 				}
 
-				const created = yield* createBookFromUpload({
+				const created = yield* BookService.createBookFromUpload({
 					title: resolvedTitle,
 					authors: resolvedAuthors,
 					description: parsedEpub.metadata.description,
@@ -509,7 +498,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 				createdResources.bookId = created.book.id;
 				createdResources.fileR2Key = created.file.r2Key;
 
-				yield* uploadBookFile({
+				yield* FileService.uploadBookFile({
 					r2Key: created.file.r2Key,
 					body: stagedObject.body,
 					contentType:
@@ -525,7 +514,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 					});
 					createdResources.coverR2Key = coverR2Key;
 
-					yield* uploadBookFile({
+					yield* FileService.uploadBookFile({
 						r2Key: coverR2Key,
 						body: parsedEpub.cover.data,
 						contentType: parsedEpub.cover.mimeType,
@@ -533,7 +522,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 					});
 				}
 
-				yield* deleteBookFile(stagingR2Key);
+				yield* FileService.deleteBookFile(stagingR2Key);
 
 				yield* database
 					.update(schema.uploadTasks)
@@ -564,7 +553,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 				Effect.catchAll((error) =>
 					Effect.gen(function* () {
 						if (task.stagingR2Key && task.multipartUploadId) {
-							yield* abortMultipartUpload({
+							yield* FileService.abortMultipartUpload({
 								r2Key: stagingR2Key,
 								uploadId: multipartUploadId,
 							}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
@@ -632,14 +621,14 @@ export const abortBookUploadServerFn = createServerFn({ method: "POST" })
 			}
 
 			if (task.stagingR2Key && task.multipartUploadId) {
-				yield* abortMultipartUpload({
+				yield* FileService.abortMultipartUpload({
 					r2Key: task.stagingR2Key,
 					uploadId: task.multipartUploadId,
 				}).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
 			}
 
 			if (task.stagingR2Key) {
-				yield* deleteBookFile(task.stagingR2Key).pipe(
+				yield* FileService.deleteBookFile(task.stagingR2Key).pipe(
 					Effect.catchAll(() => Effect.succeed(undefined)),
 				);
 			}

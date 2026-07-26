@@ -9,7 +9,7 @@ import {
 	resolveKoboLocalOrProxy,
 } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import { getBookMetadataByUuid } from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 
 const parseIds = (value: string): string[] =>
 	value
@@ -39,7 +39,7 @@ export const Route = createFileRoute(
 
 						for (const bookUuid of ids) {
 							const result = yield* resolveKoboLocalOrProxy({
-								local: getBookMetadataByUuid({
+								local: KoboService.getBookMetadataByUuid({
 									bookUuid,
 									origin,
 									token: koboToken,

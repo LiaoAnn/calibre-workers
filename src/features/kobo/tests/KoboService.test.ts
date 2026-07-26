@@ -1,31 +1,11 @@
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 import {
-	buildLocalLibrarySync,
-	createKoboAuthToken,
-	createMissingKepubConversionJobs,
-	createOrUpdateKoboTag,
-	deleteKoboTag,
-	getBookByUuid,
-	getBookMetadataByUuid,
-	getDownloadFileForKobo,
-	getReadingStateResponseByBookUuid,
-	listKoboAuthTokensForUser,
+	KoboService,
 	parseKoboSyncTokenFromHeaders,
-	renameKoboTag,
-	revokeKoboAuthToken,
-	setArchivedBookByUuid,
 	setSyncTokenHeader,
-	unarchiveBooksForKoboSync,
-	updateReadingStateByBookUuid,
 } from "#/features/kobo/services/KoboService";
-import {
-	addBooksToShelf,
-	createShelf,
-	listShelfBooks,
-	listShelves,
-	setShelfKoboSync,
-} from "#/features/shelves/services/ShelfService";
+import { ShelfService } from "#/features/shelves/services/ShelfService";
 import {
 	runTest,
 	runTestExit,
@@ -43,9 +23,9 @@ describe("KoboService", () => {
 			const tokens = await runTest(
 				Effect.gen(function* () {
 					const userId = yield* seedUser();
-					yield* createKoboAuthToken(userId);
-					yield* createKoboAuthToken(userId);
-					return yield* listKoboAuthTokensForUser(userId);
+					yield* KoboService.createKoboAuthToken(userId);
+					yield* KoboService.createKoboAuthToken(userId);
+					return yield* KoboService.listKoboAuthTokensForUser(userId);
 				}),
 			);
 
@@ -58,9 +38,9 @@ describe("KoboService", () => {
 			const tokens = await runTest(
 				Effect.gen(function* () {
 					const userId = yield* seedUser();
-					yield* createKoboAuthToken(userId);
-					yield* revokeKoboAuthToken({ userId });
-					return yield* listKoboAuthTokensForUser(userId);
+					yield* KoboService.createKoboAuthToken(userId);
+					yield* KoboService.revokeKoboAuthToken({ userId });
+					return yield* KoboService.listKoboAuthTokensForUser(userId);
 				}),
 			);
 			expect(tokens).toHaveLength(1);
@@ -68,15 +48,15 @@ describe("KoboService", () => {
 		});
 	});
 
-	describe("getBookByUuid", () => {
+	describe("KoboService.getBookByUuid", () => {
 		it("returns the book and fails with KoboBookNotFound otherwise", async () => {
 			const uuid = crypto.randomUUID();
 			await runTest(seedBook({ uuid, title: "Found" }));
 
-			const book = await runTest(getBookByUuid(uuid));
+			const book = await runTest(KoboService.getBookByUuid(uuid));
 			expect(book.title).toBe("Found");
 
-			const exit = await runTestExit(getBookByUuid("nope"));
+			const exit = await runTestExit(KoboService.getBookByUuid("nope"));
 			expect(Exit.isFailure(exit)).toBe(true);
 			if (Exit.isFailure(exit)) {
 				expect(JSON.stringify(Exit.causeOption(exit))).toContain(
@@ -86,13 +66,13 @@ describe("KoboService", () => {
 		});
 	});
 
-	describe("getDownloadFileForKobo", () => {
+	describe("KoboService.getDownloadFileForKobo", () => {
 		it("returns the exact format when present", async () => {
 			const result = await runTest(
 				Effect.gen(function* () {
 					const bookId = yield* seedBook();
 					yield* seedBookFile(bookId, { format: "kepub" });
-					return yield* getDownloadFileForKobo({
+					return yield* KoboService.getDownloadFileForKobo({
 						bookId,
 						requestedFormat: "kepub",
 					});
@@ -107,7 +87,7 @@ describe("KoboService", () => {
 				Effect.gen(function* () {
 					const bookId = yield* seedBook();
 					const epubFileId = yield* seedBookFile(bookId, { format: "epub" });
-					const result = yield* getDownloadFileForKobo({
+					const result = yield* KoboService.getDownloadFileForKobo({
 						bookId,
 						requestedFormat: "kepub",
 					});
@@ -123,7 +103,7 @@ describe("KoboService", () => {
 			const exit = await runTestExit(
 				Effect.gen(function* () {
 					const bookId = yield* seedBook();
-					return yield* getDownloadFileForKobo({
+					return yield* KoboService.getDownloadFileForKobo({
 						bookId,
 						requestedFormat: "kepub",
 					});
@@ -138,14 +118,14 @@ describe("KoboService", () => {
 		});
 	});
 
-	describe("getBookMetadataByUuid", () => {
+	describe("KoboService.getBookMetadataByUuid", () => {
 		it("returns Kobo metadata with a download url", async () => {
 			const result = await runTest(
 				Effect.gen(function* () {
 					const uuid = crypto.randomUUID();
 					const bookId = yield* seedBook({ uuid, title: "Downloadable" });
 					yield* seedBookFile(bookId, { format: "kepub" });
-					return yield* getBookMetadataByUuid({
+					return yield* KoboService.getBookMetadataByUuid({
 						bookUuid: uuid,
 						origin: ORIGIN,
 						token: "token",
@@ -166,7 +146,7 @@ describe("KoboService", () => {
 				Effect.gen(function* () {
 					const userId = yield* seedUser();
 					yield* seedBook({ uuid });
-					const update = yield* updateReadingStateByBookUuid({
+					const update = yield* KoboService.updateReadingStateByBookUuid({
 						userId,
 						bookUuid: uuid,
 						payload: {
@@ -179,7 +159,7 @@ describe("KoboService", () => {
 							],
 						},
 					});
-					const state = yield* getReadingStateResponseByBookUuid({
+					const state = yield* KoboService.getReadingStateResponseByBookUuid({
 						userId,
 						bookUuid: uuid,
 					});
@@ -204,12 +184,15 @@ describe("KoboService", () => {
 				Effect.gen(function* () {
 					const userId = yield* seedUser();
 					const bookId = yield* seedBook({ uuid });
-					const archived = yield* setArchivedBookByUuid({
+					const archived = yield* KoboService.setArchivedBookByUuid({
 						userId,
 						bookUuid: uuid,
 						isArchived: true,
 					});
-					yield* unarchiveBooksForKoboSync({ userId, bookIds: [bookId] });
+					yield* KoboService.unarchiveBooksForKoboSync({
+						userId,
+						bookIds: [bookId],
+					});
 					return { archived, bookId };
 				}),
 			);
@@ -218,15 +201,17 @@ describe("KoboService", () => {
 		});
 	});
 
-	describe("createMissingKepubConversionJobs", () => {
+	describe("KoboService.createMissingKepubConversionJobs", () => {
 		it("creates a job once and de-duplicates against pending jobs", async () => {
 			const { first, second } = await runTest(
 				Effect.gen(function* () {
 					const bookId = yield* seedBook();
 					const sourceFileId = yield* seedBookFile(bookId, { format: "epub" });
 					const request = [{ bookId, sourceFileId }];
-					const first = yield* createMissingKepubConversionJobs(request);
-					const second = yield* createMissingKepubConversionJobs(request);
+					const first =
+						yield* KoboService.createMissingKepubConversionJobs(request);
+					const second =
+						yield* KoboService.createMissingKepubConversionJobs(request);
 					return { first, second };
 				}),
 			);
@@ -243,21 +228,25 @@ describe("KoboService", () => {
 					const uuid = crypto.randomUUID();
 					yield* seedBook({ uuid, title: "Tagged" });
 
-					const tag = yield* createOrUpdateKoboTag({
+					const tag = yield* KoboService.createOrUpdateKoboTag({
 						userId,
 						name: "Favorites",
 						revisionIds: [uuid],
 					});
-					const booksOnTag = yield* listShelfBooks({
+					const booksOnTag = yield* ShelfService.listShelfBooks({
 						userId,
 						shelfId: tag.tagId,
 					});
 
-					yield* renameKoboTag({ userId, tagId: tag.tagId, name: "Best" });
-					const afterRename = yield* listShelves(userId);
+					yield* KoboService.renameKoboTag({
+						userId,
+						tagId: tag.tagId,
+						name: "Best",
+					});
+					const afterRename = yield* ShelfService.listShelves(userId);
 
-					yield* deleteKoboTag({ userId, tagId: tag.tagId });
-					const afterDelete = yield* listShelves(userId);
+					yield* KoboService.deleteKoboTag({ userId, tagId: tag.tagId });
+					const afterDelete = yield* ShelfService.listShelves(userId);
 
 					return { tag, booksOnTag, afterRename, afterDelete };
 				}),
@@ -283,33 +272,36 @@ describe("KoboService", () => {
 		});
 	});
 
-	describe("buildLocalLibrarySync", () => {
+	describe("KoboService.buildLocalLibrarySync", () => {
 		it("syncs books from a Kobo-enabled shelf and is idempotent", async () => {
 			const { first, second } = await runTest(
 				Effect.gen(function* () {
 					const userId = yield* seedUser();
-					const shelf = yield* createShelf({ userId, name: "Kobo Shelf" });
-					yield* setShelfKoboSync({
+					const shelf = yield* ShelfService.createShelf({
+						userId,
+						name: "Kobo Shelf",
+					});
+					yield* ShelfService.setShelfKoboSync({
 						userId,
 						shelfId: shelf.id,
 						enabled: true,
 					});
 					const bookId = yield* seedBook({ title: "Synced Book" });
 					yield* seedBookFile(bookId, { format: "epub" });
-					yield* addBooksToShelf({
+					yield* ShelfService.addBooksToShelf({
 						userId,
 						shelfId: shelf.id,
 						bookIds: [bookId],
 					});
 
-					const first = yield* buildLocalLibrarySync({
+					const first = yield* KoboService.buildLocalLibrarySync({
 						userId,
 						token: "kobo-token",
 						origin: ORIGIN,
 						syncToken: emptySyncToken(),
 					});
 					// Re-sync with the token returned by the first sync.
-					const second = yield* buildLocalLibrarySync({
+					const second = yield* KoboService.buildLocalLibrarySync({
 						userId,
 						token: "kobo-token",
 						origin: ORIGIN,

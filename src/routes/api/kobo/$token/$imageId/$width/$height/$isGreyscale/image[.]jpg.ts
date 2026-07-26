@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect, Either } from "effect";
-import { getBookFile } from "#/features/files/services/FileService";
+import { FileService } from "#/features/files/services/FileService";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import { getBookByUuid } from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 import { r2Keys } from "#/shared/lib/r2-keys";
 
 const KOBO_IMAGEHOST_URL = "https://cdn.kobo.com/book-images";
@@ -16,12 +16,14 @@ export const Route = createFileRoute(
 				withKoboAuth(input, ({ params }) =>
 					Effect.gen(function* () {
 						const bookResult = yield* Effect.either(
-							getBookByUuid(params.imageId),
+							KoboService.getBookByUuid(params.imageId),
 						);
 
 						if (Either.isRight(bookResult) && bookResult.right.hasCover) {
 							const coverResult = yield* Effect.either(
-								getBookFile(r2Keys.bookCover({ bookId: bookResult.right.id })),
+								FileService.getBookFile(
+									r2Keys.bookCover({ bookId: bookResult.right.id }),
+								),
 							);
 
 							if (Either.isRight(coverResult)) {

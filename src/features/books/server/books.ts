@@ -4,20 +4,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect } from "effect";
 import type { MetadataQueueMessage } from "#/features/books/queue/metadata";
 import {
-	createMetadataJob,
-	getBookById,
-	listBookFilesForMetadataSync,
-	listBooks,
-	setBookFilesMetadataStatus,
+	BookService,
 	type UpdateBookInput,
-	updateBook,
-	updateMetadataJobStatus,
 } from "#/features/books/services/BookService";
-import {
-	deleteBookFile,
-	getBookFile,
-	uploadBookFile,
-} from "#/features/files/services/FileService";
+import { FileService } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { r2Keys } from "#/shared/lib/r2-keys";
@@ -41,7 +31,7 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: ListBooksServerInput | undefined) => input)
 	.handler(async ({ data }) => {
 		return ServerRuntime.runPromise(
-			listBooks({
+			BookService.listBooks({
 				page: data?.page,
 				limit: data?.limit,
 				author: data?.author,
@@ -58,7 +48,7 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 	.inputValidator((input: GetBookByIdServerInput) => input)
 	.handler(async ({ data }) => {
 		return ServerRuntime.runPromise(
-			getBookById(data.bookId).pipe(
+			BookService.getBookById(data.bookId).pipe(
 				Effect.catchTag("BookNotFound", () => Effect.die(notFound())),
 			),
 		);
@@ -74,33 +64,36 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 		const { files, metadataJobId } = await ServerRuntime.runPromise(
 			Effect.gen(function* () {
 				if (coverTempR2Key) {
-					const tempCoverObject = yield* getBookFile(coverTempR2Key);
+					const tempCoverObject =
+						yield* FileService.getBookFile(coverTempR2Key);
 
-					yield* uploadBookFile({
+					yield* FileService.uploadBookFile({
 						r2Key: r2Keys.bookCover({ bookId: data.bookId }),
 						body: tempCoverObject.body,
 						contentType: tempCoverObject.httpMetadata?.contentType,
 						expectedSize: tempCoverObject.size,
 					});
 
-					yield* deleteBookFile(coverTempR2Key);
+					yield* FileService.deleteBookFile(coverTempR2Key);
 				}
 
-				yield* updateBook({
+				yield* BookService.updateBook({
 					...bookInput,
 					hasCover: coverTempR2Key ? true : undefined,
 				});
-				const files = yield* listBookFilesForMetadataSync(data.bookId);
+				const files = yield* BookService.listBookFilesForMetadataSync(
+					data.bookId,
+				);
 				let metadataJobId: string | undefined;
 
 				if (files.length > 0) {
-					yield* setBookFilesMetadataStatus({
+					yield* BookService.setBookFilesMetadataStatus({
 						bookId: data.bookId,
 						fileIds: files.map((file) => file.fileId),
 						status: "pending",
 					});
 
-					const job = yield* createMetadataJob({
+					const job = yield* BookService.createMetadataJob({
 						bookId: data.bookId,
 						userId,
 					});
@@ -124,13 +117,13 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 				await ServerRuntime.runPromise(
 					Effect.all(
 						[
-							setBookFilesMetadataStatus({
+							BookService.setBookFilesMetadataStatus({
 								bookId: data.bookId,
 								fileIds: files.map((file) => file.fileId),
 								status: "failed",
 								onlyIfCurrentStatusIn: ["pending", "processing"],
 							}),
-							updateMetadataJobStatus(metadataJobId, {
+							BookService.updateMetadataJobStatus(metadataJobId, {
 								status: "failed",
 								errorMessage: "Failed to enqueue metadata synchronization job",
 							}),

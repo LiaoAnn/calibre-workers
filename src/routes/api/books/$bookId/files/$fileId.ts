@@ -1,9 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
-import {
-	getBookFile,
-	getBookFileRecord,
-} from "#/features/files/services/FileService";
+import { FileService } from "#/features/files/services/FileService";
 import { getSessionFromMiddlewareFn } from "#/shared/auth/middleware";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
 
@@ -18,7 +15,7 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 		handlers: {
 			GET: async ({ params }) => {
 				const runnable = Effect.gen(function* () {
-					const fileRecord = yield* getBookFileRecord(
+					const fileRecord = yield* FileService.getBookFileRecord(
 						params.bookId,
 						params.fileId,
 					);
@@ -42,7 +39,7 @@ export const Route = createFileRoute("/api/books/$bookId/files/$fileId")({
 						};
 					}
 
-					const object = yield* getBookFile(fileRecord.r2Key);
+					const object = yield* FileService.getBookFile(fileRecord.r2Key);
 					return { locked: false as const, fileRecord, object };
 				});
 

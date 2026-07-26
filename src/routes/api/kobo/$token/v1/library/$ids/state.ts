@@ -10,10 +10,7 @@ import {
 	resolveKoboLocalOrProxy,
 } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import {
-	getReadingStateResponseByBookUuid,
-	updateReadingStateByBookUuid,
-} from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 
 const parseIds = (value: string): string[] =>
 	value
@@ -38,7 +35,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/$ids/state")({
 
 						for (const bookUuid of ids) {
 							const result = yield* resolveKoboLocalOrProxy({
-								local: getReadingStateResponseByBookUuid({
+								local: KoboService.getReadingStateResponseByBookUuid({
 									userId: koboAuth.userId,
 									bookUuid,
 								}),
@@ -90,7 +87,7 @@ export const Route = createFileRoute("/api/kobo/$token/v1/library/$ids/state")({
 						});
 
 						const result = yield* resolveKoboLocalOrProxy({
-							local: updateReadingStateByBookUuid({
+							local: KoboService.updateReadingStateByBookUuid({
 								userId: koboAuth.userId,
 								bookUuid,
 								payload,

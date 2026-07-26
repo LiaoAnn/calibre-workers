@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
-import { getBookFile } from "#/features/files/services/FileService";
+import { FileService } from "#/features/files/services/FileService";
 import { KoboFileNotFound } from "#/features/kobo/lib/kobo.server";
 import { withKoboAuth } from "#/features/kobo/server/withKoboAuth";
-import { getDownloadFileForKobo } from "#/features/kobo/services/KoboService";
+import { KoboService } from "#/features/kobo/services/KoboService";
 
 export const Route = createFileRoute(
 	"/api/kobo/$token/download/$bookId/$bookFormat",
@@ -13,14 +13,16 @@ export const Route = createFileRoute(
 			GET: async (input) =>
 				withKoboAuth(input, ({ params }) =>
 					Effect.gen(function* () {
-						const selected = yield* getDownloadFileForKobo({
+						const selected = yield* KoboService.getDownloadFileForKobo({
 							bookId: params.bookId,
 							requestedFormat: params.bookFormat,
 						});
 
 						// NOTE(gray area): for strict backward compatibility we currently map
 						// storage read failures to FileNotFound (404), matching existing behavior.
-						const fileObject = yield* getBookFile(selected.file.r2Key).pipe(
+						const fileObject = yield* FileService.getBookFile(
+							selected.file.r2Key,
+						).pipe(
 							Effect.catchAll(() =>
 								Effect.fail(
 									new KoboFileNotFound({
