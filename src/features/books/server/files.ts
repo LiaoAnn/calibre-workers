@@ -15,9 +15,9 @@ import { EpubService } from "#/features/files/services/EpubService";
 import { FileService } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import * as schema from "#/shared/db/schema";
-import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { DatabaseContext } from "#/shared/layers/DatabaseLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
+import { runServerEffect } from "#/shared/server/runServerEffect";
 
 class UploadError extends Data.TaggedError("UploadError")<{
 	readonly message: string;
@@ -109,7 +109,7 @@ export const uploadBookCoverTempServerFn = createServerFn({ method: "POST" })
 			});
 		}
 
-		await ServerRuntime.runPromise(
+		await runServerEffect(
 			FileService.uploadBookFile({
 				r2Key: tempR2Key,
 				body: bytes,
@@ -229,7 +229,7 @@ export const createBookUploadSessionServerFn = createServerFn({
 			};
 		});
 
-		return ServerRuntime.runPromise(runnable);
+		return runServerEffect(runnable);
 	});
 
 export const uploadBookPartServerFn = createServerFn({ method: "POST" })
@@ -315,7 +315,7 @@ export const uploadBookPartServerFn = createServerFn({ method: "POST" })
 			};
 		});
 
-		return ServerRuntime.runPromise(runnable);
+		return runServerEffect(runnable);
 	});
 
 interface CompleteBookUploadInput {
@@ -580,7 +580,7 @@ export const completeBookUploadServerFn = createServerFn({ method: "POST" })
 			);
 		});
 
-		return ServerRuntime.runPromise(runnable);
+		return runServerEffect(runnable);
 	});
 
 interface AbortBookUploadInput {
@@ -646,5 +646,5 @@ export const abortBookUploadServerFn = createServerFn({ method: "POST" })
 			return { success: true };
 		});
 
-		return ServerRuntime.runPromise(runnable);
+		return runServerEffect(runnable);
 	});

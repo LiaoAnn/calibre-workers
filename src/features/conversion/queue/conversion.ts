@@ -8,6 +8,7 @@ import type { BookFileFormat } from "#/shared/db/schema";
 import { QueueRuntime } from "#/shared/layers/AppRuntime";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
+import { queueOutcomeForExit } from "#/shared/queue/queueOutcome";
 
 export interface ConversionQueueMessage {
 	jobId: string;
@@ -173,39 +174,30 @@ export const handleConversionQueue: ExportedHandlerQueueHandler<
 			}
 
 			const causePretty = Cause.pretty(exit.cause);
-			yield* Effect.sync(() => {
-				console.error(
-					`Conversion queue failed for job ${jobId} (attempt ${message.attempts})`,
-					causePretty,
+
+			if (queueOutcomeForExit(exit) === "retry") {
+				// A defect is a bug, not a job outcome. Leave the message unacked so
+				// Cloudflare redelivers it and it eventually reaches the DLQ, rather
+				// than discarding it and reporting the job as merely "failed".
+				yield* Effect.logError(
+					`conversion job ${jobId} hit a defect (attempt ${message.attempts}); leaving the message for redelivery`,
+					exit.cause,
 				);
-			});
+				yield* Effect.sync(() => message.retry());
+				return;
+			}
+
+			yield* Effect.logWarning(
+				`conversion job ${jobId} failed (attempt ${message.attempts})`,
+				exit.cause,
+			);
 
 			yield* settleConversionFailure({
 				jobId,
 				errorMessage: causePretty,
 				message,
 			});
-		}).pipe(
-			Effect.catchAllCause((cause) =>
-				Effect.gen(function* () {
-					const { jobId } = message.body;
-					const causePretty = Cause.pretty(cause);
-					console.error(
-						`Unexpected conversion queue failure for job ${jobId} (attempt ${message.attempts})`,
-						causePretty,
-					);
-
-					yield* ConversionService.updateConversionJobStatus(jobId, {
-						status: "failed",
-						errorMessage: causePretty,
-					}).pipe(Effect.catchAll(() => Effect.void));
-
-					yield* Effect.sync(() => {
-						message.ack();
-					});
-				}),
-			),
-		);
+		});
 
 	await QueueRuntime.runPromise(
 		Effect.forEach(batch.messages, processMessage, {

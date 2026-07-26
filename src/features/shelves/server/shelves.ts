@@ -1,6 +1,6 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect } from "effect";
+import type { Effect } from "effect";
 import type {
 	InvalidShelfName,
 	ShelfAccessDenied,
@@ -9,7 +9,7 @@ import type {
 import { ShelfService } from "#/features/shelves/services/ShelfService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import type { AppServices } from "#/shared/layers/AppLayer";
-import { ServerRuntime } from "#/shared/layers/AppRuntime";
+import { runServerEffect } from "#/shared/server/runServerEffect";
 
 interface ShelfByIdInput {
 	shelfId: string;
@@ -50,23 +50,7 @@ const runShelfEffect = <T>(
 		ShelfNotFound | ShelfAccessDenied | InvalidShelfName | SqlError,
 		AppServices
 	>,
-): Promise<T> =>
-	ServerRuntime.runPromise(
-		effect.pipe(
-			Effect.catchTag("ShelfNotFound", () =>
-				Effect.die(new Error("書架不存在")),
-			),
-			Effect.catchTag("ShelfAccessDenied", () =>
-				Effect.die(new Error("沒有權限存取此書架")),
-			),
-			Effect.catchTag("InvalidShelfName", (error: InvalidShelfName) =>
-				Effect.die(new Error(error.reason)),
-			),
-			Effect.catchTag("SqlError", (error) =>
-				Effect.die(new Error(`[SqlError] ${String(error.message)}`)),
-			),
-		),
-	);
+): Promise<T> => runServerEffect(effect);
 
 export const listShelvesServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])

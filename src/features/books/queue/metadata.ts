@@ -7,6 +7,7 @@ import type { BookFileFormat } from "#/shared/db/schema";
 import { QueueRuntime } from "#/shared/layers/AppRuntime";
 import { ConverterContainerContext } from "#/shared/layers/ConverterContainerLayer";
 import { r2Keys } from "#/shared/lib/r2-keys";
+import { queueOutcomeForExit } from "#/shared/queue/queueOutcome";
 
 export interface MetadataQueueMessage {
 	jobId: string;
@@ -189,13 +190,6 @@ const settleMetadataFailure = ({
 	errorMessage: string;
 }) =>
 	Effect.gen(function* () {
-		yield* Effect.sync(() => {
-			console.error(
-				`Metadata queue failed for job ${jobId} (attempt ${message.attempts})`,
-				errorMessage,
-			);
-		});
-
 		yield* BookService.updateMetadataJobStatus(jobId, {
 			status: "failed",
 			errorMessage,
@@ -231,43 +225,29 @@ export const handleMetadataQueue: ExportedHandlerQueueHandler<
 				return;
 			}
 
+			if (queueOutcomeForExit(exit) === "retry") {
+				// A defect is a bug, not a job outcome. Leave the message unacked so
+				// Cloudflare redelivers it and it eventually reaches the DLQ, rather
+				// than discarding it and reporting the job as merely "failed".
+				yield* Effect.logError(
+					`metadata job ${jobId} hit a defect (attempt ${message.attempts}); leaving the message for redelivery`,
+					exit.cause,
+				);
+				yield* Effect.sync(() => message.retry());
+				return;
+			}
+
+			yield* Effect.logWarning(
+				`metadata job ${jobId} failed (attempt ${message.attempts})`,
+				exit.cause,
+			);
+
 			yield* settleMetadataFailure({
 				jobId,
 				message,
 				errorMessage: Cause.pretty(exit.cause),
 			});
-		}).pipe(
-			Effect.catchAllCause((cause) =>
-				Effect.gen(function* () {
-					const { jobId } = message.body;
-					const causePretty = Cause.pretty(cause);
-					console.error(
-						`Unexpected metadata queue failure for job ${jobId} (attempt ${message.attempts})`,
-						causePretty,
-					);
-
-					yield* BookService.updateMetadataJobStatus(jobId, {
-						status: "failed",
-						errorMessage: causePretty,
-					}).pipe(Effect.catchAll(() => Effect.void));
-
-					const jobResult = yield* Effect.either(
-						BookService.getMetadataJob(jobId),
-					);
-					if (Either.isRight(jobResult)) {
-						yield* BookService.setBookFilesMetadataStatus({
-							bookId: jobResult.right.bookId,
-							status: "failed",
-							onlyIfCurrentStatusIn: ["pending", "processing", "failed"],
-						}).pipe(Effect.catchAll(() => Effect.void));
-					}
-
-					yield* Effect.sync(() => {
-						message.ack();
-					});
-				}),
-			),
-		);
+		});
 
 	await QueueRuntime.runPromise(
 		Effect.forEach(batch.messages, processMessage, {

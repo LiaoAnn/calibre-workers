@@ -11,6 +11,7 @@ import { FileService } from "#/features/files/services/FileService";
 import { requiredSessionMiddleware } from "#/shared/auth/middleware";
 import { ServerRuntime } from "#/shared/layers/AppRuntime";
 import { r2Keys } from "#/shared/lib/r2-keys";
+import { runServerEffect } from "#/shared/server/runServerEffect";
 
 interface ListBooksServerInput {
 	page?: number;
@@ -30,16 +31,12 @@ export const listBooksServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: ListBooksServerInput | undefined) => input)
 	.handler(async ({ data }) => {
-		return ServerRuntime.runPromise(
+		return runServerEffect(
 			BookService.listBooks({
 				page: data?.page,
 				limit: data?.limit,
 				author: data?.author,
-			}).pipe(
-				Effect.catchTag("SqlError", (e) =>
-					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
-				),
-			),
+			}),
 		);
 	});
 
@@ -47,11 +44,19 @@ export const getBookByIdServerFn = createServerFn({ method: "GET" })
 	.middleware([requiredSessionMiddleware])
 	.inputValidator((input: GetBookByIdServerInput) => input)
 	.handler(async ({ data }) => {
-		return ServerRuntime.runPromise(
+		const book = await runServerEffect(
 			BookService.getBookById(data.bookId).pipe(
-				Effect.catchTag("BookNotFound", () => Effect.die(notFound())),
+				// `notFound()` is TanStack router control flow, not an error value, so
+				// it is thrown at the boundary rather than pushed through the Effect.
+				Effect.catchTag("BookNotFound", () => Effect.succeed(null)),
 			),
 		);
+
+		if (!book) {
+			throw notFound();
+		}
+
+		return book;
 	});
 
 export const updateBookServerFn = createServerFn({ method: "POST" })
@@ -61,7 +66,7 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 		const { coverTempR2Key, ...bookInput } = data;
 		const userId = context.session.user.id;
 
-		const { files, metadataJobId } = await ServerRuntime.runPromise(
+		const { files, metadataJobId } = await runServerEffect(
 			Effect.gen(function* () {
 				if (coverTempR2Key) {
 					const tempCoverObject =
@@ -101,11 +106,7 @@ export const updateBookServerFn = createServerFn({ method: "POST" })
 				}
 
 				return { files, metadataJobId };
-			}).pipe(
-				Effect.catchTag("SqlError", (e) =>
-					Effect.die(new Error(`[SqlError] ${String(e.message)}`)),
-				),
-			),
+			}),
 		);
 
 		if (files.length > 0 && metadataJobId) {

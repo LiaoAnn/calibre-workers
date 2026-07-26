@@ -15,6 +15,15 @@ class StorageError extends Data.TaggedError("StorageError")<{
 	readonly cause: unknown;
 }> {}
 
+/**
+ * The object simply is not in the bucket. Distinct from `StorageError` because
+ * absence is a normal, client-actionable outcome (404), whereas a StorageError
+ * means the bucket call itself failed.
+ */
+class ObjectNotFound extends Data.TaggedError("ObjectNotFound")<{
+	readonly r2Key: string;
+}> {}
+
 interface UploadBookFileInput {
 	r2Key: string;
 	body: ArrayBuffer | ArrayBufferView | ReadableStream<Uint8Array>;
@@ -141,9 +150,7 @@ export class FileService extends Effect.Service<FileService>()("FileService", {
 			});
 
 			if (!object) {
-				return yield* Effect.fail(
-					new StorageError({ operation: "file.notFound", cause: r2Key }),
-				);
+				return yield* Effect.fail(new ObjectNotFound({ r2Key }));
 			}
 
 			return object;
@@ -158,9 +165,7 @@ export class FileService extends Effect.Service<FileService>()("FileService", {
 				});
 
 				if (!object) {
-					return yield* Effect.fail(
-						new StorageError({ operation: "file.rangeNotFound", cause: r2Key }),
-					);
+					return yield* Effect.fail(new ObjectNotFound({ r2Key }));
 				}
 
 				return yield* Effect.tryPromise({
