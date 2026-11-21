@@ -7,13 +7,6 @@
   "features": {
     "ghcr.io/devcontainers-extra/features/cloudflare-wrangler:1": {
       "version": "latest"
-    },
-    "ghcr.io/devcontainers/features/go:1": {
-      "version": "latest"
-    },
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-      "version": "latest",
-      "moby": false
     }
   },
   // Configure tool-specific properties.
@@ -56,6 +49,11 @@
   "forwardPorts": [
     8787
   ],
+  "portsAttributes": {
+    "8787": {
+      "label": "app"
+    }
+  },
   // Fix pnpm store permissions after volume mount (Docker named volume may be root-owned) and then pin pnpm store path.
   "postCreateCommand": "sudo mkdir -p /home/node/.pnpm-store /home/node/go/pkg/mod /home/node/.cache/go-build && sudo chown -R node:node /home/node/.pnpm-store /home/node/go /home/node/.cache/go-build && pnpm config set store-dir /home/node/.pnpm-store",
   "remoteEnv": {

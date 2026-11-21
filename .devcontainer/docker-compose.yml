@@ -1,16 +1,50 @@
 services:
+  # Each dev environment gets its own Docker daemon. Cloudflare Containers in local dev
+  # (workerd) reach the container through a port it publishes, at a hardcoded 127.0.0.1, so the
+  # dev server must share the daemon's network namespace: app uses network_mode service:dind.
+  # A daemon per environment also keeps parallel environments (git worktrees) from removing or
+  # untagging each other's images and containers.
+  dind:
+    image: docker:29-dind
+    privileged: true
+    # With src_valid_mark=1 the kernel drops the replies of the proxy workerd puts in front of
+    # each container (fwmark routing), and the container never starts. Some hosts set it (e.g.
+    # Tailscale); this resets it here, and for the containers dind runs when the host has
+    # net.core.devconf_inherit_init_net=3 (new namespaces copy their creator's settings).
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: 0
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    # Plain TCP on loopback: reachable only from this namespace (dind and app), not from the
+    # containers it runs. Own bridge range, so it can't overlap the outer Docker networks.
+    # Starting with `dockerd` skips the entrypoint's default --host=tcp://0.0.0.0:2375.
+    command:
+      - dockerd
+      - --host=tcp://127.0.0.1:2375
+      - --host=unix:///var/run/docker.sock
+      - --tls=false
+      - --bip=10.213.0.1/24
+      - --default-address-pool=base=10.214.0.0/16,size=24
+    volumes:
+      - dind_data:/var/lib/docker
+
   app:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
     command: sleep infinity
     user: node
+    network_mode: service:dind
+    depends_on:
+      - dind
+    environment:
+      # docker CLI (image builds) and workerd (Docker Engine API; host:port, no tcp://).
+      DOCKER_HOST: tcp://127.0.0.1:2375
+      WRANGLER_DOCKER_HOST: 127.0.0.1:2375
     volumes:
       - ../..:/workspaces:cached
       - pnpm_store:/home/node/.pnpm-store
-      - /var/run/docker.sock:/var/run/docker.sock
-    # allow wrangler access the container that created in the host
-    network_mode: "host"
 
 volumes:
   pnpm_store:
+  dind_data:
